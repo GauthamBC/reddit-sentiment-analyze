@@ -251,18 +251,25 @@ with tabs[2]:
             with tab1: st.dataframe(df_results, use_container_width=True)
             with tab2: st.table(df_summary_all)
             with tab3: st.table(df_summary_wo)
+# ==============================
+# Tab 4: Reset / Clear Workspace
+# ==============================
+with tabs[3]:
+    st.subheader("⚡ Reset / Clear Workspace")
+    st.write("Use this option to clear all cached data, results, and reset the app to a fresh state.")
 
-        # ==============================
-        # Tab 4: Reset / Clear Workspace
-        # ==============================
-        with tabs[3]:
-            st.subheader("⚡ Reset / Clear Workspace")
-            st.write("Use this option to clear all cached data, results, and reset the app to a fresh state.")
-        
-            if st.button("🧹 Clear All Data", use_container_width=True, key="clear_all"):
-                st.session_state.clear()
-                st.cache_resource.clear()  # <— optional, clears models too
-                st.success("✅ All session data cleared! Please reload or continue fresh.")
-                st.rerun()
+    if st.button("🧹 Clear All Data", use_container_width=True, key="clear_all"):
+        # Clear everything in session state
+        st.session_state.clear()
+
+        # Clear model cache (optional)
+        st.cache_resource.clear()
+
+        # Explicitly reset file uploader widget
+        if "uploaded_file" in st.session_state:
+            del st.session_state["uploaded_file"]
+
+        st.success("✅ All session data cleared! Please reload or continue fresh.")
+        st.rerun()
 
 
