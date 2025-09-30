@@ -65,24 +65,46 @@ if uploaded_file:
         df_results["sentiment_label"] = [label_map[r["label"]] for r in results]
         df_results["sentiment_score"] = [r["score"] for r in results]
 
-        # Summary
-        sentiment_counts = Counter(df_results["sentiment_label"])
-        total = sum(sentiment_counts.values())
-        df_summary = pd.DataFrame([
-            {"Category": k, "Count": v, "Percentage": round((v/total)*100, 2)}
-            for k, v in sentiment_counts.items()
+        # --- Breakdown with Neutral ---
+        sentiment_counts_all = Counter(df_results["sentiment_label"])
+        total_all = sum(sentiment_counts_all.values())
+        df_summary_all = pd.DataFrame([
+            {"Sentiment": k, "Count": v, "Percentage": round((v/total_all)*100, 2)}
+            for k, v in sentiment_counts_all.items()
+        ])
+
+        # --- Breakdown without Neutral (renormalized) ---
+        sentiment_counts_wo = {k: v for k, v in sentiment_counts_all.items() if k.lower() != "neutral"}
+        total_wo = sum(sentiment_counts_wo.values())
+        df_summary_wo = pd.DataFrame([
+            {"Sentiment": k, "Count": v, "Percentage": round((v/total_wo)*100, 2)}
+            for k, v in sentiment_counts_wo.items()
         ])
 
         st.success("✅ Sentiment analysis complete!")
-        tab1, tab2 = st.tabs(["📄 Per-Comment Sentiment", "📊 Sentiment Breakdown"])
-        with tab1: st.dataframe(df_results, use_container_width=True)
-        with tab2: st.table(df_summary)
 
-        # Download Excel
+        # Tabs for clarity
+        tab1, tab2, tab3 = st.tabs([
+            "📄 Per-Comment Sentiment",
+            "📊 Sentiment Breakdown (All Labels)",
+            "📊 Sentiment Breakdown (Excluding Neutral, Renormalized)"
+        ])
+
+        with tab1: 
+            st.dataframe(df_results, use_container_width=True)
+
+        with tab2: 
+            st.table(df_summary_all)
+
+        with tab3: 
+            st.table(df_summary_wo)
+
+        # --- Download Excel ---
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
             df_results.to_excel(writer, sheet_name="Per-Comment Sentiment", index=False)
-            df_summary.to_excel(writer, sheet_name="Sentiment Breakdown", index=False)
+            df_summary_all.to_excel(writer, sheet_name="Breakdown All Labels", index=False)
+            df_summary_wo.to_excel(writer, sheet_name="Breakdown Excl Neutral", index=False)
         output.seek(0)
 
         st.download_button(
