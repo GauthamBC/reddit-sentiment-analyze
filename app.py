@@ -35,7 +35,7 @@ st.title("📊 Reddit Comment Sentiment Analyzer")
 # ------------------------------
 # Create Tabs
 # ------------------------------
-tabs = st.tabs(["URLs Fetcher", "Comment scraper", "Sentiment / Emotion Analyzer"])
+tabs = st.tabs(["URLs Fetcher", "Comment scraper", "Sentiment / Emotion Analyzer", "⚡Reset Workspace"])
 
 # ==============================
 # Tab 1: URLs Fetcher
@@ -251,3 +251,16 @@ with tabs[2]:
             with tab1: st.dataframe(df_results, use_container_width=True)
             with tab2: st.table(df_summary_all)
             with tab3: st.table(df_summary_wo)
+
+        # ==============================
+        # Tab 4: Reset / Clear Workspace
+        # ==============================
+        with tabs[3]:
+            st.subheader("⚡ Reset / Clear Workspace")
+            st.write("Use this option to clear all cached data, results, and reset the app to a fresh state.")
+        
+            if st.button("🧹 Clear All Data", use_container_width=True, key="clear_all"):
+                st.session_state.clear()
+                st.success("✅ All session data cleared! Please reload or continue fresh.")
+                st.rerun()
+
