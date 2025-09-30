@@ -117,7 +117,7 @@ if uploaded_file:
 
         st.success("✅ Sentiment analysis complete!")
 
-        col_a, col_b = st.columns([3, 1])
+        col_a, col_b = st.columns([1, 1])
         with col_a:
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine="openpyxl") as writer:
