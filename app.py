@@ -123,7 +123,7 @@ if uploaded_file:
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         ):
             st.session_state.active_analysis = None
-            st.experimental_rerun()
+            st.rerun()
 
         # Tabs
         tab1, tab2, tab3 = st.tabs([
