@@ -47,11 +47,11 @@ if uploaded_file:
     # ==============================
     # Buttons side by side
     # ==============================
-        col1, col2 = st.columns([1, 1])
+    col1, col2 = st.columns([1, 1])
     with col1:
         run_sentiment = st.button("🚀 Run Sentiment Analysis", use_container_width=True)
     with col2:
-        run_emotion = st.button("🎭 Run Emotion Analysis", use_container_width=True)
+        run_emotion = st.button("🎭 Run Emotion Analysis", use_container_width=True)    
 
     # --- Sentiment Analysis ---
     if run_sentiment:
