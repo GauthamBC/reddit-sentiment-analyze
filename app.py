@@ -115,12 +115,15 @@ if uploaded_file:
             df_summary_all.to_excel(writer, sheet_name="Breakdown All Sentiments", index=False)
             df_summary_wo.to_excel(writer, sheet_name="Breakdown Excl Neutral", index=False)
         output.seek(0)
-        st.download_button(
+
+        if st.download_button(
             label="⬇️ Download Sentiment Results",
             data=output,
             file_name="reddit_sentiment_results.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+        ):
+            st.session_state.active_analysis = None
+            st.experimental_rerun()
 
         # Tabs
         tab1, tab2, tab3 = st.tabs([
@@ -195,12 +198,15 @@ if uploaded_file:
             df_summary_all.to_excel(writer, sheet_name="Breakdown All Emotions", index=False)
             df_summary_wo.to_excel(writer, sheet_name="Breakdown Excl Neutral", index=False)
         output.seek(0)
-        st.download_button(
+
+        if st.download_button(
             label="⬇️ Download Emotion Results",
             data=output,
             file_name="reddit_emotion_results.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+        ):
+            st.session_state.active_analysis = None
+            st.experimental_rerun()
 
         # Tabs
         tab1, tab2, tab3 = st.tabs([
