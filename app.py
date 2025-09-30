@@ -45,16 +45,28 @@ if uploaded_file:
     texts = df[col_to_analyze].iloc[start:end].astype(str).tolist()
 
     # ==============================
-    # Buttons side by side (tight)
-    # ==============================
-    button_container = st.container()
-    col1, col2 = button_container.columns([1, 1], gap="small")
+# Buttons side by side with CSS
+# ==============================
+st.markdown(
+    """
+    <style>
+    .analysis-buttons {
+        display: flex;
+        gap: 10px;
+    }
+    .analysis-buttons button {
+        flex: 1;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
-    with col1:
-        run_sentiment = st.button("🚀 Run Sentiment Analysis")
-
-    with col2:
-        run_emotion = st.button("🎭 Run Emotion Analysis")
+col1, col2 = st.columns([1, 1], gap="small")
+with col1:
+    run_sentiment = st.button("🚀 Run Sentiment Analysis", key="sentiment_btn")
+with col2:
+    run_emotion = st.button("🎭 Run Emotion Analysis", key="emotion_btn")
 
     # --- Sentiment Analysis ---
     if run_sentiment:
