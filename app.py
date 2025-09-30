@@ -43,9 +43,16 @@ if uploaded_file:
         # Sentiment predictions
         results = sentiment_model(texts, batch_size=32, truncation=True)
 
+        # Map raw model labels to human-readable ones
+        label_map = {
+            "LABEL_0": "Negative",
+            "LABEL_1": "Neutral",
+            "LABEL_2": "Positive"
+        }
+        
         # Add results back to DataFrame
         df_results = df.iloc[start:end].copy()
-        df_results["sentiment_label"] = [r["label"] for r in results]
+        df_results["sentiment_label"] = [label_map[r["label"]] for r in results]
         df_results["sentiment_score"] = [r["score"] for r in results]
 
         # Breakdown summary
