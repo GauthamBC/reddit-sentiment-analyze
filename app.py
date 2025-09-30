@@ -59,11 +59,11 @@ if uploaded_file:
 
     # Prevent running both
     if run_sentiment and st.session_state.active_analysis == "emotion":
-        st.warning("⚠️ Please clear or download the Emotion Analysis table before running Sentiment Analysis.")
+        st.warning("⚠️ Please clear the Emotion Analysis table before running Sentiment Analysis.")
         run_sentiment = False
 
     if run_emotion and st.session_state.active_analysis == "sentiment":
-        st.warning("⚠️ Please clear or download the Sentiment Analysis table before running Emotion Analysis.")
+        st.warning("⚠️ Please clear the Sentiment Analysis table before running Emotion Analysis.")
         run_emotion = False
 
     # ==============================
