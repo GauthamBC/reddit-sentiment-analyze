@@ -3,6 +3,7 @@ import pandas as pd
 from transformers import pipeline
 from collections import Counter
 import io
+import time
 
 # ==============================
 # 1) Load Models
@@ -37,10 +38,7 @@ if uploaded_file:
     df = pd.read_csv(uploaded_file, header=0, on_bad_lines="skip")
     st.success(f"✅ Loaded file with {df.shape[0]} rows and {df.shape[1]} columns.")
 
-    # Column selector
     col_to_analyze = st.selectbox("Select column to analyze:", df.columns)
-
-    # Row range
     start = st.number_input("Start row (0-indexed)", min_value=0, max_value=len(df), value=0)
     end = st.number_input("End row (exclusive)", min_value=1, max_value=len(df), value=len(df))
 
@@ -49,8 +47,17 @@ if uploaded_file:
     # --- Sentiment Analysis ---
     if st.button("🚀 Run Sentiment Analysis"):
         st.info(f"Running sentiment analysis on {len(texts)} comments... ⏳")
+        progress_bar = st.progress(0)
+        status_text = st.empty()
 
-        results = sentiment_model(texts, batch_size=32, truncation=True, max_length=512)
+        results = []
+        for i in range(0, len(texts), 32):
+            batch = texts[i:i+32]
+            results.extend(sentiment_model(batch, truncation=True, max_length=512))
+            percent = int(((i+len(batch)) / len(texts)) * 100)
+            progress_bar.progress(percent)
+            status_text.text(f"Processed {i+len(batch)} / {len(texts)} comments ({percent}%)")
+            time.sleep(0.01)
 
         # Map labels
         label_map = {"LABEL_0": "Negative", "LABEL_1": "Neutral", "LABEL_2": "Positive"}
@@ -66,27 +73,25 @@ if uploaded_file:
             for k, v in sentiment_counts.items()
         ])
 
+        st.success("✅ Sentiment analysis complete!")
         tab1, tab2 = st.tabs(["📄 Per-Comment Sentiment", "📊 Sentiment Breakdown"])
-        with tab1:
-            st.dataframe(df_results, use_container_width=True)
-        with tab2:
-            st.table(df_summary)
-
-        # Download
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine="openpyxl") as writer:
-            df_results.to_excel(writer, sheet_name="Sentiment Results", index=False)
-            df_summary.to_excel(writer, sheet_name="Sentiment Summary", index=False)
-        output.seek(0)
-
-        st.download_button("⬇️ Download Sentiment Results", output, "sentiment_analysis.xlsx",
-                           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        with tab1: st.dataframe(df_results, use_container_width=True)
+        with tab2: st.table(df_summary)
 
     # --- Emotion Analysis ---
     if st.button("🎭 Run Emotion Analysis"):
         st.info(f"Running emotion analysis on {len(texts)} comments... ⏳")
+        progress_bar = st.progress(0)
+        status_text = st.empty()
 
-        results = emotion_model(texts, batch_size=16, truncation=True, max_length=512)
+        results = []
+        for i in range(0, len(texts), 16):
+            batch = texts[i:i+16]
+            results.extend(emotion_model(batch, truncation=True, max_length=512))
+            percent = int(((i+len(batch)) / len(texts)) * 100)
+            progress_bar.progress(percent)
+            status_text.text(f"Processed {i+len(batch)} / {len(texts)} comments ({percent}%)")
+            time.sleep(0.01)
 
         # Pick dominant emotion
         df_results = df.iloc[start:end].copy()
@@ -101,18 +106,7 @@ if uploaded_file:
             for k, v in emotion_counts.items()
         ])
 
+        st.success("✅ Emotion analysis complete!")
         tab1, tab2 = st.tabs(["📄 Per-Comment Emotion", "📊 Emotion Breakdown"])
-        with tab1:
-            st.dataframe(df_results, use_container_width=True)
-        with tab2:
-            st.table(df_summary)
-
-        # Download
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine="openpyxl") as writer:
-            df_results.to_excel(writer, sheet_name="Emotion Results", index=False)
-            df_summary.to_excel(writer, sheet_name="Emotion Summary", index=False)
-        output.seek(0)
-
-        st.download_button("⬇️ Download Emotion Results", output, "emotion_analysis.xlsx",
-                           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        with tab1: st.dataframe(df_results, use_container_width=True)
+        with tab2: st.table(df_summary)
