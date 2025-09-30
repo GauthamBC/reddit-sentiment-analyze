@@ -51,7 +51,7 @@ if uploaded_file:
     with col1:
         run_sentiment = st.button("🚀 Run Sentiment Analysis", use_container_width=True)
     with col2:
-        run_emotion = st.button("🎭 Run Emotion Analysis", use_container_width=True)    
+        run_emotion = st.button("🎭 Run Emotion Analysis", use_container_width=True)
 
     # --- Sentiment Analysis ---
     if run_sentiment:
@@ -74,7 +74,7 @@ if uploaded_file:
         df_results["sentiment_label"] = [label_map[r["label"]] for r in results]
         df_results["sentiment_score"] = [r["score"] for r in results]
 
-        # --- Breakdown with Neutral ---
+        # Summaries
         sentiment_counts_all = Counter(df_results["sentiment_label"])
         total_all = sum(sentiment_counts_all.values())
         df_summary_all = pd.DataFrame([
@@ -83,7 +83,6 @@ if uploaded_file:
         ])
         df_summary_all.loc[len(df_summary_all)] = ["Total", total_all, 100.0]
 
-        # --- Breakdown without Neutral (renormalized) ---
         sentiment_counts_wo = {k: v for k, v in sentiment_counts_all.items() if k.lower() != "neutral"}
         total_wo = sum(sentiment_counts_wo.values())
         df_summary_wo = pd.DataFrame([
@@ -92,14 +91,23 @@ if uploaded_file:
         ])
         df_summary_wo.loc[len(df_summary_wo)] = ["Total", total_wo, 100.0]
 
+        # Save in session state
+        st.session_state["sentiment_results"] = {
+            "df_results": df_results,
+            "df_summary_all": df_summary_all,
+            "df_summary_wo": df_summary_wo
+        }
         st.success("✅ Sentiment analysis complete!")
 
-        # --- Download button ABOVE tabs ---
+    # Render Sentiment Results if available
+    if "sentiment_results" in st.session_state:
+        res = st.session_state["sentiment_results"]
+
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
-            df_results.to_excel(writer, sheet_name="Per-Comment Sentiment", index=False)
-            df_summary_all.to_excel(writer, sheet_name="Breakdown All Sentiments", index=False)
-            df_summary_wo.to_excel(writer, sheet_name="Breakdown Excl Neutral", index=False)
+            res["df_results"].to_excel(writer, sheet_name="Per-Comment Sentiment", index=False)
+            res["df_summary_all"].to_excel(writer, sheet_name="Breakdown All Sentiments", index=False)
+            res["df_summary_wo"].to_excel(writer, sheet_name="Breakdown Excl Neutral", index=False)
         output.seek(0)
 
         st.download_button(
@@ -109,15 +117,14 @@ if uploaded_file:
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
-        # Tabs
         tab1, tab2, tab3 = st.tabs([
             "📄 Per-Comment Sentiment",
             "📊 Sentiment Breakdown (All Sentiments)",
             "📊 Sentiment Breakdown (Excluding Neutral, Renormalized)"
         ])
-        with tab1: st.dataframe(df_results, use_container_width=True)
-        with tab2: st.table(df_summary_all)
-        with tab3: st.table(df_summary_wo)
+        with tab1: st.dataframe(res["df_results"], use_container_width=True)
+        with tab2: st.table(res["df_summary_all"])
+        with tab3: st.table(res["df_summary_wo"])
 
     # --- Emotion Analysis ---
     if run_emotion:
@@ -134,7 +141,6 @@ if uploaded_file:
             status_text.text(f"Processed {i+len(batch)} / {len(texts)} comments ({percent}%)")
             time.sleep(0.01)
 
-        # Pick dominant emotion
         dominant_emotions, dominant_scores = [], []
         for r in results:
             top = max(r, key=lambda x: x["score"])
@@ -145,7 +151,7 @@ if uploaded_file:
         df_results["dominant_emotion"] = dominant_emotions
         df_results["emotion_score"] = dominant_scores
 
-        # --- Breakdown with Neutral ---
+        # Summaries
         emotion_counts_all = Counter(dominant_emotions)
         total_all = sum(emotion_counts_all.values())
         df_summary_all = pd.DataFrame([
@@ -154,7 +160,6 @@ if uploaded_file:
         ])
         df_summary_all.loc[len(df_summary_all)] = ["Total", total_all, 100.0]
 
-        # --- Breakdown without Neutral (renormalized) ---
         emotion_counts_wo = {k: v for k, v in emotion_counts_all.items() if k.lower() != "neutral"}
         total_wo = sum(emotion_counts_wo.values())
         df_summary_wo = pd.DataFrame([
@@ -163,14 +168,23 @@ if uploaded_file:
         ])
         df_summary_wo.loc[len(df_summary_wo)] = ["Total", total_wo, 100.0]
 
+        # Save in session state
+        st.session_state["emotion_results"] = {
+            "df_results": df_results,
+            "df_summary_all": df_summary_all,
+            "df_summary_wo": df_summary_wo
+        }
         st.success("✅ Emotion analysis complete!")
 
-        # --- Download button ABOVE tabs ---
+    # Render Emotion Results if available
+    if "emotion_results" in st.session_state:
+        res = st.session_state["emotion_results"]
+
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
-            df_results.to_excel(writer, sheet_name="Per-Comment Emotion", index=False)
-            df_summary_all.to_excel(writer, sheet_name="Breakdown All Emotions", index=False)
-            df_summary_wo.to_excel(writer, sheet_name="Breakdown Excl Neutral", index=False)
+            res["df_results"].to_excel(writer, sheet_name="Per-Comment Emotion", index=False)
+            res["df_summary_all"].to_excel(writer, sheet_name="Breakdown All Emotions", index=False)
+            res["df_summary_wo"].to_excel(writer, sheet_name="Breakdown Excl Neutral", index=False)
         output.seek(0)
 
         st.download_button(
@@ -180,12 +194,11 @@ if uploaded_file:
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
-        # Tabs
         tab1, tab2, tab3 = st.tabs([
             "📄 Per-Comment Emotion",
             "📊 Emotion Breakdown (All Emotions)",
             "📊 Emotion Breakdown (Excluding Neutral, Renormalized)"
         ])
-        with tab1: st.dataframe(df_results, use_container_width=True)
-        with tab2: st.table(df_summary_all)
-        with tab3: st.table(df_summary_wo)
+        with tab1: st.dataframe(res["df_results"], use_container_width=True)
+        with tab2: st.table(res["df_summary_all"])
+        with tab3: st.table(res["df_summary_wo"])
