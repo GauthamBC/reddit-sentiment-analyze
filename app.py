@@ -44,8 +44,17 @@ if uploaded_file:
 
     texts = df[col_to_analyze].iloc[start:end].astype(str).tolist()
 
+    # ==============================
+    # Buttons side by side
+    # ==============================
+    col1, col2 = st.columns(2)
+    with col1:
+        run_sentiment = st.button("🚀 Run Sentiment Analysis")
+    with col2:
+        run_emotion = st.button("🎭 Run Emotion Analysis")
+
     # --- Sentiment Analysis ---
-    if st.button("🚀 Run Sentiment Analysis"):
+    if run_sentiment:
         st.info(f"Running sentiment analysis on {len(texts)} comments... ⏳")
         progress_bar = st.progress(0)
         status_text = st.empty()
@@ -111,7 +120,7 @@ if uploaded_file:
         with tab3: st.table(df_summary_wo)
 
     # --- Emotion Analysis ---
-    if st.button("🎭 Run Emotion Analysis"):
+    if run_emotion:
         st.info(f"Running emotion analysis on {len(texts)} comments... ⏳")
         progress_bar = st.progress(0)
         status_text = st.empty()
