@@ -117,7 +117,7 @@ if uploaded_file:
 
         st.success("✅ Sentiment analysis complete!")
 
-        col_a, col_b = st.columns([1, 1])
+        col_a, col_b = st.columns([1, 1])  # 50/50 split
         with col_a:
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine="openpyxl") as writer:
@@ -130,7 +130,8 @@ if uploaded_file:
                 data=output,
                 file_name="reddit_sentiment_results.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key="download_sent"
+                key="download_sent",
+                use_container_width=True
             )
         with col_b:
             if st.button("🧹 Clear Table", use_container_width=True, key="clear_sent"):
@@ -204,7 +205,7 @@ if uploaded_file:
 
         st.success("✅ Emotion analysis complete!")
 
-        col_a, col_b = st.columns([1, 1])
+        col_a, col_b = st.columns([1, 1])  # 50/50 split
         with col_a:
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine="openpyxl") as writer:
@@ -217,7 +218,8 @@ if uploaded_file:
                 data=output,
                 file_name="reddit_emotion_results.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key="download_emo"
+                key="download_emo",
+                use_container_width=True
             )
         with col_b:
             if st.button("🧹 Clear Table", use_container_width=True, key="clear_emo"):
