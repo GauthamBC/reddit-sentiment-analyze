@@ -122,13 +122,26 @@ if uploaded_file:
         df_results["dominant_emotion"] = dominant_emotions
         df_results["emotion_score"] = dominant_scores
 
-        # Summary
+        # Full summary
         emotion_counts = Counter(dominant_emotions)
         total = sum(emotion_counts.values())
-        df_summary = pd.DataFrame([
+        df_summary_full = pd.DataFrame([
             {"Emotion": k, "Count": v, "Percentage": round((v/total)*100, 2)}
             for k, v in emotion_counts.items()
         ])
+
+        # Option to exclude neutral
+        exclude_neutral = st.checkbox("Exclude Neutral and Renormalize Breakdown")
+
+        if exclude_neutral and "neutral" in [e.lower() for e in emotion_counts.keys()]:
+            emotion_counts_no_neutral = {k: v for k, v in emotion_counts.items() if k.lower() != "neutral"}
+            total_no_neutral = sum(emotion_counts_no_neutral.values())
+            df_summary = pd.DataFrame([
+                {"Emotion": k, "Count": v, "Percentage": round((v/total_no_neutral)*100, 2)}
+                for k, v in emotion_counts_no_neutral.items()
+            ])
+        else:
+            df_summary = df_summary_full
 
         st.success("✅ Emotion analysis complete!")
         tab1, tab2 = st.tabs(["📄 Per-Comment Emotion", "📊 Emotion Breakdown"])
@@ -139,7 +152,9 @@ if uploaded_file:
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
             df_results.to_excel(writer, sheet_name="Per-Comment Emotion", index=False)
-            df_summary.to_excel(writer, sheet_name="Emotion Breakdown", index=False)
+            df_summary_full.to_excel(writer, sheet_name="Emotion Breakdown (Full)", index=False)
+            if exclude_neutral:
+                df_summary.to_excel(writer, sheet_name="Emotion Breakdown (No Neutral)", index=False)
         output.seek(0)
 
         st.download_button(
