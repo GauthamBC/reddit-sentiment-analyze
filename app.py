@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import streamlit.components.v1 as components
 from transformers import pipeline
 from collections import Counter
 import io
@@ -256,13 +257,17 @@ with tabs[2]:
 # ==============================
 with tabs[3]:
     st.subheader("⚡ Reset / Clear Workspace")
-    st.write("This will clear all cached models, uploaded files, and reset the app to a fresh state.")
+    st.write("This will clear all cached models, session state, and uploaded files.")
 
     if st.button("🧹 Clear All Data", use_container_width=True, key="clear_all"):
-        # Clear session + cached resources
         st.session_state.clear()
         st.cache_resource.clear()
-
         st.success("✅ Workspace cleared! Reloading...")
-        st.rerun()
+
+        # JS hack to reload page
+        components.html("""
+            <script>
+            window.location.reload();
+            </script>
+            """, height=0)
 
