@@ -44,10 +44,10 @@ with tabs[0]:
     st.subheader("🔗 URLs Fetcher")
 
     serpapi_key = st.text_input("🔑 Enter your SerpAPI Key", type="password")
-st.markdown(
-    "[👉 Get your SerpAPI key here](https://serpapi.com/dashboard)",
-    unsafe_allow_html=True
-)
+    st.markdown(
+        "[👉 Get your SerpAPI key here](https://serpapi.com/dashboard)",
+        unsafe_allow_html=True
+    )
     google_url = st.text_input("🌐 Google Search URL", placeholder="Paste your Google Search URL here")
 
     num_pages = st.slider("Number of Pages to Fetch", min_value=1, max_value=20, value=10)
