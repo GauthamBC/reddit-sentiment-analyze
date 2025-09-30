@@ -42,7 +42,7 @@ tabs = st.tabs(["URLs Fetcher", "Comment scraper", "Sentiment / Emotion Analyzer
 # ==============================
 with tabs[0]:
     st.subheader("🔗 URLs Fetcher")
-    col1, col2 = st.columns([3, 1])  # adjust ratio as needed
+    col1, col2 = st.columns([1, 1])  # adjust ratio as needed
     with col1:
         serpapi_key = st.text_input("🔑 Enter your SerpAPI Key", type="password")
     with col2:
