@@ -46,7 +46,7 @@ with tabs[0]:
     serpapi_key = st.text_input("🔑 Enter your SerpAPI Key", type="password")
     google_url = st.text_input("🌐 Google Search URL", placeholder="Paste your Google Search URL here")
 
-    num_pages = st.slider("Number of Pages to Fetch", min_value=1, max_value=20, value=5)
+    num_pages = st.slider("Number of Pages to Fetch", min_value=1, max_value=20, value=10)
 
     if st.button("Fetch URLs", use_container_width=True):
         if not serpapi_key:
