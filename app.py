@@ -92,72 +92,77 @@ if uploaded_file:
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
-# --- Emotion Analysis ---
-if st.button("🎭 Run Emotion Analysis"):
-    st.info(f"Running emotion analysis on {len(texts)} comments... ⏳")
-    progress_bar = st.progress(0)
-    status_text = st.empty()
+    # --- Emotion Analysis ---
+    if st.button("🎭 Run Emotion Analysis"):
+        st.info(f"Running emotion analysis on {len(texts)} comments... ⏳")
+        progress_bar = st.progress(0)
+        status_text = st.empty()
 
-    results = []
-    for i in range(0, len(texts), 16):
-        batch = texts[i:i+16]
-        results.extend(emotion_model(batch, truncation=True, max_length=512))
-        percent = int(((i+len(batch)) / len(texts)) * 100)
-        progress_bar.progress(percent)
-        status_text.text(f"Processed {i+len(batch)} / {len(texts)} comments ({percent}%)")
-        time.sleep(0.01)
+        results = []
+        for i in range(0, len(texts), 16):
+            batch = texts[i:i+16]
+            results.extend(emotion_model(batch, truncation=True, max_length=512))
+            percent = int(((i+len(batch)) / len(texts)) * 100)
+            progress_bar.progress(percent)
+            status_text.text(f"Processed {i+len(batch)} / {len(texts)} comments ({percent}%)")
+            time.sleep(0.01)
 
-    # Always keep Neutral in per-comment results
-    dominant_emotions = [max(r, key=lambda x: x["score"])["label"] for r in results]
-    dominant_scores = [max(r, key=lambda x: x["score"])["score"] for r in results]
+        # Pick dominant emotion (allow Neutral)
+        dominant_emotions, dominant_scores = [], []
+        for r in results:
+            top = max(r, key=lambda x: x["score"])
+            dominant_emotions.append(top["label"])
+            dominant_scores.append(top["score"])
 
-    df_results = df.iloc[start:end].copy()
-    df_results["dominant_emotion"] = dominant_emotions
-    df_results["emotion_score"] = dominant_scores
+        df_results = df.iloc[start:end].copy()
+        df_results["dominant_emotion"] = dominant_emotions
+        df_results["emotion_score"] = dominant_scores
 
-    # Full breakdown (with Neutral)
-    emotion_counts = Counter(dominant_emotions)
-    total_full = sum(emotion_counts.values())
-    df_summary_full = pd.DataFrame([
-        {"Emotion": k, "Count": v, "Percentage": round((v/total_full)*100, 2)}
-        for k, v in emotion_counts.items()
-    ])
+        # --- Breakdown with Neutral ---
+        emotion_counts_all = Counter(dominant_emotions)
+        total_all = sum(emotion_counts_all.values())
+        df_summary_all = pd.DataFrame([
+            {"Emotion": k, "Count": v, "Percentage": round((v/total_all)*100, 2)}
+            for k, v in emotion_counts_all.items()
+        ])
 
-    # Excluding Neutral + renormalizing
-    filtered_counts = {k: v for k, v in emotion_counts.items() if k.lower() != "neutral"}
-    total_filtered = sum(filtered_counts.values())
-    df_summary_no_neutral = pd.DataFrame([
-        {"Emotion": k, "Count": v, "Percentage": round((v/total_filtered)*100, 2)}
-        for k, v in filtered_counts.items()
-    ])
+        # --- Breakdown without Neutral (renormalized) ---
+        emotion_counts_wo = {k: v for k, v in emotion_counts_all.items() if k.lower() != "neutral"}
+        total_wo = sum(emotion_counts_wo.values())
+        df_summary_wo = pd.DataFrame([
+            {"Emotion": k, "Count": v, "Percentage": round((v/total_wo)*100, 2)}
+            for k, v in emotion_counts_wo.items()
+        ])
 
-    st.success("✅ Emotion analysis complete!")
+        st.success("✅ Emotion analysis complete!")
 
-    # Tabs
-    tab1, tab2 = st.tabs(["📄 Per-Comment Emotion", "📊 Emotion Breakdown"])
+        # Tabs for clarity
+        tab1, tab2, tab3 = st.tabs([
+            "📄 Per-Comment Emotion",
+            "📊 Emotion Breakdown (All Emotions)",
+            "📊 Emotion Breakdown (Excluding Neutral, Renormalized)"
+        ])
 
-    with tab1:
-        st.dataframe(df_results, use_container_width=True)
+        with tab1: 
+            st.dataframe(df_results, use_container_width=True)
 
-    with tab2:
-        exclude_neutral = st.checkbox("Exclude Neutral and renormalize", value=False)
+        with tab2: 
+            st.table(df_summary_all)
 
-        if exclude_neutral:
-            st.table(df_summary_no_neutral)
-        else:
-            st.table(df_summary_full)
+        with tab3: 
+            st.table(df_summary_wo)
 
-    # Download Excel (always includes both)
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df_results.to_excel(writer, sheet_name="Per-Comment Emotion", index=False)
-        df_summary_full.to_excel(writer, sheet_name="Emotion Breakdown (with Neutral)", index=False)
-        df_summary_no_neutral.to_excel(writer, sheet_name="Emotion Breakdown (no Neutral)", index=False)
-    output.seek(0)
+        # --- Download Excel ---
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            df_results.to_excel(writer, sheet_name="Per-Comment Emotion", index=False)
+            df_summary_all.to_excel(writer, sheet_name="Breakdown All Emotions", index=False)
+            df_summary_wo.to_excel(writer, sheet_name="Breakdown Excl Neutral", index=False)
+        output.seek(0)
 
-    st.download_button(
-        label="⬇️ Download Emotion Results",
-        data=output,
-        file_name="reddit_emotion_results.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+        st.download_button(
+            label="⬇️ Download Emotion Results",
+            data=output,
+            file_name="reddit_emotion_results.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
