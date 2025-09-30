@@ -78,6 +78,20 @@ if uploaded_file:
         with tab1: st.dataframe(df_results, use_container_width=True)
         with tab2: st.table(df_summary)
 
+        # Download Excel
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            df_results.to_excel(writer, sheet_name="Per-Comment Sentiment", index=False)
+            df_summary.to_excel(writer, sheet_name="Sentiment Breakdown", index=False)
+        output.seek(0)
+
+        st.download_button(
+            label="⬇️ Download Sentiment Results",
+            data=output,
+            file_name="reddit_sentiment_results.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+
     # --- Emotion Analysis ---
     if st.button("🎭 Run Emotion Analysis"):
         st.info(f"Running emotion analysis on {len(texts)} comments... ⏳")
@@ -93,13 +107,23 @@ if uploaded_file:
             status_text.text(f"Processed {i+len(batch)} / {len(texts)} comments ({percent}%)")
             time.sleep(0.01)
 
-        # Pick dominant emotion
+        # Pick dominant emotion (skip Neutral if top-1)
+        dominant_emotions, dominant_scores = [], []
+        for r in results:
+            sorted_emotions = sorted(r, key=lambda x: x["score"], reverse=True)
+            if sorted_emotions[0]["label"].lower() == "neutral":
+                dominant_emotions.append(sorted_emotions[1]["label"])
+                dominant_scores.append(sorted_emotions[1]["score"])
+            else:
+                dominant_emotions.append(sorted_emotions[0]["label"])
+                dominant_scores.append(sorted_emotions[0]["score"])
+
         df_results = df.iloc[start:end].copy()
-        df_results["dominant_emotion"] = [max(r, key=lambda x: x["score"])["label"] for r in results]
-        df_results["emotion_score"] = [max(r, key=lambda x: x["score"])["score"] for r in results]
+        df_results["dominant_emotion"] = dominant_emotions
+        df_results["emotion_score"] = dominant_scores
 
         # Summary
-        emotion_counts = Counter(df_results["dominant_emotion"])
+        emotion_counts = Counter(dominant_emotions)
         total = sum(emotion_counts.values())
         df_summary = pd.DataFrame([
             {"Emotion": k, "Count": v, "Percentage": round((v/total)*100, 2)}
@@ -110,3 +134,17 @@ if uploaded_file:
         tab1, tab2 = st.tabs(["📄 Per-Comment Emotion", "📊 Emotion Breakdown"])
         with tab1: st.dataframe(df_results, use_container_width=True)
         with tab2: st.table(df_summary)
+
+        # Download Excel
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            df_results.to_excel(writer, sheet_name="Per-Comment Emotion", index=False)
+            df_summary.to_excel(writer, sheet_name="Emotion Breakdown", index=False)
+        output.seek(0)
+
+        st.download_button(
+            label="⬇️ Download Emotion Results",
+            data=output,
+            file_name="reddit_emotion_results.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
