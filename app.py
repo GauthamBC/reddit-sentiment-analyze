@@ -256,20 +256,13 @@ with tabs[2]:
 # ==============================
 with tabs[3]:
     st.subheader("⚡ Reset / Clear Workspace")
-    st.write("Use this option to clear all cached data, results, and reset the app to a fresh state.")
+    st.write("This will clear all cached models, uploaded files, and reset the app to a fresh state.")
 
     if st.button("🧹 Clear All Data", use_container_width=True, key="clear_all"):
-        # Clear everything in session state
+        # Clear session + cached resources
         st.session_state.clear()
-
-        # Clear model cache (optional)
         st.cache_resource.clear()
 
-        # Explicitly reset file uploader widget
-        if "uploaded_file" in st.session_state:
-            del st.session_state["uploaded_file"]
-
-        st.success("✅ All session data cleared! Please reload or continue fresh.")
+        st.success("✅ Workspace cleared! Reloading...")
         st.rerun()
-
 
