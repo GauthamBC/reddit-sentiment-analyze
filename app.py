@@ -44,16 +44,14 @@ if uploaded_file:
 
     texts = df[col_to_analyze].iloc[start:end].astype(str).tolist()
 
-        # ==============================
+    # ==============================
     # Buttons side by side
     # ==============================
-    col1, col2 = st.columns(2)
-    
+        col1, col2 = st.columns([1, 1])
     with col1:
-        run_sentiment = st.button("🚀 Run Sentiment Analysis", key="sentiment_btn")
-    
+        run_sentiment = st.button("🚀 Run Sentiment Analysis", use_container_width=True)
     with col2:
-        run_emotion = st.button("🎭 Run Emotion Analysis", key="emotion_btn")
+        run_emotion = st.button("🎭 Run Emotion Analysis", use_container_width=True)
 
     # --- Sentiment Analysis ---
     if run_sentiment:
