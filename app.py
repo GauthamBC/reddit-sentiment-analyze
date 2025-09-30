@@ -45,13 +45,16 @@ with tabs[0]:
 
     # Custom label with link
     st.markdown(
-        "🔑 Enter your SerpAPI Key "
-        "[👉 Get key](https://serpapi.com/dashboard)",
+        "🔑 Enter your SerpAPI Key [👉 Get key](https://serpapi.com/dashboard)",
         unsafe_allow_html=True
     )
 
-    # Input box (no label since we added custom one)
-    serpapi_key = st.text_input("", type="password")
+    # Input box (label collapsed so no extra space)
+    serpapi_key = st.text_input(
+        "Enter your SerpAPI Key",
+        type="password",
+        label_visibility="collapsed"
+    )
 
     google_url = st.text_input("🌐 Google Search URL", placeholder="Paste your Google Search URL here")
 
