@@ -92,7 +92,7 @@ if uploaded_file:
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
-    # --- Emotion Analysis ---
+      # --- Emotion Analysis ---
     if st.button("🎭 Run Emotion Analysis"):
         st.info(f"Running emotion analysis on {len(texts)} comments... ⏳")
         progress_bar = st.progress(0)
@@ -107,7 +107,7 @@ if uploaded_file:
             status_text.text(f"Processed {i+len(batch)} / {len(texts)} comments ({percent}%)")
             time.sleep(0.01)
 
-        # Pick dominant emotion (keep Neutral if top-1)
+        # Keep Neutral if it's dominant
         dominant_emotions = [max(r, key=lambda x: x["score"])["label"] for r in results]
         dominant_scores = [max(r, key=lambda x: x["score"])["score"] for r in results]
 
@@ -115,7 +115,7 @@ if uploaded_file:
         df_results["dominant_emotion"] = dominant_emotions
         df_results["emotion_score"] = dominant_scores
 
-        # Summary (with Neutral)
+        # Build full summary
         emotion_counts = Counter(dominant_emotions)
         total = sum(emotion_counts.values())
         df_summary_full = pd.DataFrame([
@@ -123,24 +123,32 @@ if uploaded_file:
             for k, v in emotion_counts.items()
         ])
 
-        # Option to exclude Neutral + renormalize
-        exclude_neutral = st.checkbox("Exclude Neutral from breakdown and renormalize")
-        if exclude_neutral and "neutral" in [e.lower() for e in emotion_counts.keys()]:
-            filtered_counts = {k: v for k, v in emotion_counts.items() if k.lower() != "neutral"}
-            total_filtered = sum(filtered_counts.values())
-            df_summary = pd.DataFrame([
-                {"Emotion": k, "Count": v, "Percentage": round((v/total_filtered)*100, 2)}
-                for k, v in filtered_counts.items()
-            ])
-        else:
-            df_summary = df_summary_full
-
         st.success("✅ Emotion analysis complete!")
-        tab1, tab2 = st.tabs(["📄 Per-Comment Emotion", "📊 Emotion Breakdown"])
-        with tab1: st.dataframe(df_results, use_container_width=True)
-        with tab2: st.table(df_summary)
 
-        # Download Excel
+        # Tabs
+        tab1, tab2 = st.tabs(["📄 Per-Comment Emotion", "📊 Emotion Breakdown"])
+
+        # Tab 1: per comment (always fixed)
+        with tab1:
+            st.dataframe(df_results, use_container_width=True)
+
+        # Tab 2: breakdown (reacts to checkbox)
+        with tab2:
+            exclude_neutral = st.checkbox("Exclude Neutral and renormalize", value=False)
+
+            if exclude_neutral and "neutral" in [e.lower() for e in emotion_counts.keys()]:
+                filtered_counts = {k: v for k, v in emotion_counts.items() if k.lower() != "neutral"}
+                total_filtered = sum(filtered_counts.values())
+                df_summary = pd.DataFrame([
+                    {"Emotion": k, "Count": v, "Percentage": round((v/total_filtered)*100, 2)}
+                    for k, v in filtered_counts.items()
+                ])
+            else:
+                df_summary = df_summary_full
+
+            st.table(df_summary)
+
+        # Download Excel with both versions
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
             df_results.to_excel(writer, sheet_name="Per-Comment Emotion", index=False)
