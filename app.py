@@ -42,11 +42,65 @@ tabs = st.tabs(["URLs Fetcher", "Comment scraper", "Sentiment / Emotion Analyzer
 # ==============================
 with tabs[0]:
     st.subheader("🔗 URLs Fetcher")
-    url = st.text_input("URL:", placeholder="Paste your Google search URL here")
-    if st.button("Fetch URLs", use_container_width=True):
-        st.info(f"Fetching URLs from: {url}")
-        # (logic placeholder for fetching)
 
+    serpapi_key = st.text_input("🔑 Enter your SerpAPI Key", type="password")
+    google_url = st.text_input("🌐 Google Search URL", placeholder="Paste your Google Search URL here")
+
+    num_pages = st.slider("Number of Pages to Fetch", min_value=1, max_value=20, value=5)
+
+    if st.button("Fetch URLs", use_container_width=True):
+        if not serpapi_key:
+            st.error("❌ Please enter your SerpAPI Key.")
+        elif not google_url:
+            st.error("❌ Please enter a Google Search URL.")
+        else:
+            try:
+                # Extract query from Google URL
+                parsed = urllib.parse.urlparse(google_url)
+                qs = urllib.parse.parse_qs(parsed.query)
+                query = qs.get("q")
+                if not query:
+                    st.error("❌ Could not extract query from the given URL")
+                else:
+                    query = query[0]
+                    urls = set()
+                    progress = st.progress(0)
+
+                    for page in range(num_pages):
+                        params = {
+                            "engine": "google",
+                            "q": query,
+                            "start": page * 10,
+                            "num": 10,
+                            "api_key": serpapi_key,
+                        }
+                        res = requests.get("https://serpapi.com/search.json", params=params).json()
+                        for item in res.get("organic_results", []):
+                            link = item.get("link")
+                            if link:
+                                urls.add(link)
+                        progress.progress(int((page + 1) / num_pages * 100))
+
+                    urls = sorted(urls)
+                    if urls:
+                        st.success(f"✅ Found {len(urls)} unique URLs")
+                        st.dataframe(pd.DataFrame(urls, columns=["URL"]), use_container_width=True)
+
+                        # Download button
+                        url_output = io.BytesIO()
+                        pd.DataFrame(urls, columns=["URL"]).to_csv(url_output, index=False)
+                        url_output.seek(0)
+                        st.download_button(
+                            label="⬇️ Download URLs CSV",
+                            data=url_output,
+                            file_name="fetched_urls.csv",
+                            mime="text/csv",
+                            use_container_width=True
+                        )
+                    else:
+                        st.warning("⚠️ No URLs found.")
+            except Exception as e:
+                st.error(f"❌ Error: {e}")
 # ==============================
 # Tab 2: Comment Scraper
 # ==============================
