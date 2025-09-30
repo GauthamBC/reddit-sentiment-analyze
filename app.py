@@ -43,13 +43,13 @@ tabs = st.tabs(["URLs Fetcher", "Comment scraper", "Sentiment / Emotion Analyzer
 with tabs[0]:
     st.subheader("🔗 URLs Fetcher")
     col1, col2 = st.columns([3, 1])  # adjust ratio as needed
-with col1:
-    serpapi_key = st.text_input("🔑 Enter your SerpAPI Key", type="password")
-with col2:
-    st.markdown(
-        "[👉 Get key](https://serpapi.com/dashboard)",
-        unsafe_allow_html=True
-    )
+    with col1:
+        serpapi_key = st.text_input("🔑 Enter your SerpAPI Key", type="password")
+    with col2:
+        st.markdown(
+            "[👉 Get key](https://serpapi.com/dashboard)",
+            unsafe_allow_html=True
+        )
     google_url = st.text_input("🌐 Google Search URL", placeholder="Paste your Google Search URL here")
 
     num_pages = st.slider("Number of Pages to Fetch", min_value=1, max_value=20, value=10)
