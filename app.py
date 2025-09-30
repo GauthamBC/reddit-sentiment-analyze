@@ -42,14 +42,16 @@ tabs = st.tabs(["URLs Fetcher", "Comment scraper", "Sentiment / Emotion Analyzer
 # ==============================
 with tabs[0]:
     st.subheader("🔗 URLs Fetcher")
+
     # Custom label with link
-        st.markdown(
-            "🔑 Enter your SerpAPI Key "
-            "[👉 Get key](https://serpapi.com/dashboard)",
-            unsafe_allow_html=True
-        )
-# Input box (no label since we added custom one)
-serpapi_key = st.text_input("", type="password")
+    st.markdown(
+        "🔑 Enter your SerpAPI Key "
+        "[👉 Get key](https://serpapi.com/dashboard)",
+        unsafe_allow_html=True
+    )
+
+    # Input box (no label since we added custom one)
+    serpapi_key = st.text_input("", type="password")
 
     google_url = st.text_input("🌐 Google Search URL", placeholder="Paste your Google Search URL here")
 
