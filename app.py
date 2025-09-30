@@ -72,47 +72,48 @@ if uploaded_file:
             {"Sentiment": k, "Count": v, "Percentage": round((v/total_all)*100, 2)}
             for k, v in sentiment_counts_all.items()
         ])
+        df_summary_all.loc[len(df_summary_all)] = {
+            "Sentiment": "Total", "Count": total_all, "Percentage": 100.0
+        }
 
         # --- Breakdown without Neutral (renormalized) ---
-        sentiment_counts_wo = {k: v for k, v in sentiment_counts_all.items() if k.lower() != "neutral"}
+        sentiment_counts_wo = {k: v for k, v in sentiment_counts_all.items() if k != "Neutral"}
         total_wo = sum(sentiment_counts_wo.values())
         df_summary_wo = pd.DataFrame([
             {"Sentiment": k, "Count": v, "Percentage": round((v/total_wo)*100, 2)}
             for k, v in sentiment_counts_wo.items()
         ])
+        df_summary_wo.loc[len(df_summary_wo)] = {
+            "Sentiment": "Total", "Count": total_wo, "Percentage": 100.0
+        }
 
         st.success("✅ Sentiment analysis complete!")
-
-        # Tabs for clarity
         tab1, tab2, tab3 = st.tabs([
             "📄 Per-Comment Sentiment",
-            "📊 Sentiment Breakdown (All Labels)",
+            "📊 Sentiment Breakdown (All Sentiments)",
             "📊 Sentiment Breakdown (Excluding Neutral, Renormalized)"
         ])
 
-        with tab1: 
+        with tab1:
             st.dataframe(df_results, use_container_width=True)
 
-        with tab2: 
+        with tab2:
             st.table(df_summary_all)
+            st.download_button(
+                label="⬇️ Download Sentiment Breakdown (All)",
+                data=df_summary_all.to_csv(index=False).encode("utf-8"),
+                file_name="sentiment_breakdown_all.csv",
+                mime="text/csv"
+            )
 
-        with tab3: 
+        with tab3:
             st.table(df_summary_wo)
-
-        # --- Download Excel ---
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine="openpyxl") as writer:
-            df_results.to_excel(writer, sheet_name="Per-Comment Sentiment", index=False)
-            df_summary_all.to_excel(writer, sheet_name="Breakdown All Labels", index=False)
-            df_summary_wo.to_excel(writer, sheet_name="Breakdown Excl Neutral", index=False)
-        output.seek(0)
-
-        st.download_button(
-            label="⬇️ Download Sentiment Results",
-            data=output,
-            file_name="reddit_sentiment_results.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+            st.download_button(
+                label="⬇️ Download Sentiment Breakdown (Excl Neutral)",
+                data=df_summary_wo.to_csv(index=False).encode("utf-8"),
+                file_name="sentiment_breakdown_excl_neutral.csv",
+                mime="text/csv"
+            )
 
     # --- Emotion Analysis ---
     if st.button("🎭 Run Emotion Analysis"):
@@ -129,7 +130,7 @@ if uploaded_file:
             status_text.text(f"Processed {i+len(batch)} / {len(texts)} comments ({percent}%)")
             time.sleep(0.01)
 
-        # Pick dominant emotion (allow Neutral)
+        # Pick dominant emotion
         dominant_emotions, dominant_scores = [], []
         for r in results:
             top = max(r, key=lambda x: x["score"])
@@ -147,6 +148,9 @@ if uploaded_file:
             {"Emotion": k, "Count": v, "Percentage": round((v/total_all)*100, 2)}
             for k, v in emotion_counts_all.items()
         ])
+        df_summary_all.loc[len(df_summary_all)] = {
+            "Emotion": "Total", "Count": total_all, "Percentage": 100.0
+        }
 
         # --- Breakdown without Neutral (renormalized) ---
         emotion_counts_wo = {k: v for k, v in emotion_counts_all.items() if k.lower() != "neutral"}
@@ -155,36 +159,34 @@ if uploaded_file:
             {"Emotion": k, "Count": v, "Percentage": round((v/total_wo)*100, 2)}
             for k, v in emotion_counts_wo.items()
         ])
+        df_summary_wo.loc[len(df_summary_wo)] = {
+            "Emotion": "Total", "Count": total_wo, "Percentage": 100.0
+        }
 
         st.success("✅ Emotion analysis complete!")
-
-        # Tabs for clarity
         tab1, tab2, tab3 = st.tabs([
             "📄 Per-Comment Emotion",
             "📊 Emotion Breakdown (All Emotions)",
             "📊 Emotion Breakdown (Excluding Neutral, Renormalized)"
         ])
 
-        with tab1: 
+        with tab1:
             st.dataframe(df_results, use_container_width=True)
 
-        with tab2: 
+        with tab2:
             st.table(df_summary_all)
+            st.download_button(
+                label="⬇️ Download Emotion Breakdown (All)",
+                data=df_summary_all.to_csv(index=False).encode("utf-8"),
+                file_name="emotion_breakdown_all.csv",
+                mime="text/csv"
+            )
 
-        with tab3: 
+        with tab3:
             st.table(df_summary_wo)
-
-        # --- Download Excel ---
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine="openpyxl") as writer:
-            df_results.to_excel(writer, sheet_name="Per-Comment Emotion", index=False)
-            df_summary_all.to_excel(writer, sheet_name="Breakdown All Emotions", index=False)
-            df_summary_wo.to_excel(writer, sheet_name="Breakdown Excl Neutral", index=False)
-        output.seek(0)
-
-        st.download_button(
-            label="⬇️ Download Emotion Results",
-            data=output,
-            file_name="reddit_emotion_results.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+            st.download_button(
+                label="⬇️ Download Emotion Breakdown (Excl Neutral)",
+                data=df_summary_wo.to_csv(index=False).encode("utf-8"),
+                file_name="emotion_breakdown_excl_neutral.csv",
+                mime="text/csv"
+            )
