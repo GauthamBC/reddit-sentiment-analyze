@@ -305,8 +305,4 @@ with tabs[2]:
             with tab1: st.dataframe(df_results, use_container_width=True)
             with tab2: st.table(df_summary_all)
             with tab3: st.table(df_summary_wo)
-            <script>
-            window.location.reload();
-            </script>
-            """, height=0)
 
