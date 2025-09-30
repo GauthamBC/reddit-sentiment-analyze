@@ -47,7 +47,7 @@ if uploaded_file:
     # ==============================
     # Buttons side by side
     # ==============================
-    col1, col2 = st.columns([1, 1])
+    col1, col2 = st.columns(2, gap="small")
     with col1:
         run_sentiment = st.button("🚀 Run Sentiment Analysis")
     with col2:
