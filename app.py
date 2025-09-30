@@ -45,7 +45,7 @@ with tabs[0]:
 
     # Custom label with link
     st.markdown(
-        "🔑 Enter your SerpAPI Key [👉 Get key](https://serpapi.com/dashboard)",
+        "🔑 Enter your SerpAPI Key [Get key](https://serpapi.com/dashboard)👈",
         unsafe_allow_html=True
     )
 
