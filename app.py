@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import streamlit.components.v1 as components
 from transformers import pipeline
 from collections import Counter
 import io
@@ -36,7 +35,7 @@ st.title("📊 Reddit Comment Sentiment Analyzer")
 # ------------------------------
 # Create Tabs
 # ------------------------------
-tabs = st.tabs(["URLs Fetcher", "Comment scraper", "Sentiment / Emotion Analyzer", "⚡Reset Workspace"])
+tabs = st.tabs(["URLs Fetcher", "Comment scraper", "Sentiment / Emotion Analyzer"])
 
 # ==============================
 # Tab 1: URLs Fetcher
@@ -252,20 +251,6 @@ with tabs[2]:
             with tab1: st.dataframe(df_results, use_container_width=True)
             with tab2: st.table(df_summary_all)
             with tab3: st.table(df_summary_wo)
-# ==============================
-# Tab 4: Reset / Clear Workspace
-# ==============================
-with tabs[3]:
-    st.subheader("⚡ Reset / Clear Workspace")
-    st.write("This will clear all cached models, session state, and uploaded files.")
-
-    if st.button("🧹 Clear All Data", use_container_width=True, key="clear_all"):
-        st.session_state.clear()
-        st.cache_resource.clear()
-        st.success("✅ Workspace cleared! Reloading...")
-
-        # JS hack to reload page
-        components.html("""
             <script>
             window.location.reload();
             </script>
