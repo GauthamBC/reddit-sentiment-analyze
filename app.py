@@ -261,6 +261,8 @@ with tabs[2]:
         
             if st.button("🧹 Clear All Data", use_container_width=True, key="clear_all"):
                 st.session_state.clear()
+                st.cache_resource.clear()  # <— optional, clears models too
                 st.success("✅ All session data cleared! Please reload or continue fresh.")
                 st.rerun()
+
 
