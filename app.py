@@ -51,10 +51,10 @@ if uploaded_file:
     col1, col2 = button_container.columns([1, 1], gap="small")
 
     with col1:
-    run_sentiment = st.button("🚀 Run Sentiment Analysis")
+        run_sentiment = st.button("🚀 Run Sentiment Analysis")
 
     with col2:
-    run_emotion = st.button("🎭 Run Emotion Analysis")
+        run_emotion = st.button("🎭 Run Emotion Analysis")
 
     # --- Sentiment Analysis ---
     if run_sentiment:
