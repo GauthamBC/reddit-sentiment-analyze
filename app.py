@@ -32,9 +32,6 @@ emotion_model = load_emotion_model()
 st.set_page_config(page_title="Reddit Analyzer", layout="wide")
 st.title("📊 Reddit Comment Analyzer")
 
-if "active_analysis" not in st.session_state:
-    st.session_state.active_analysis = None
-
 uploaded_file = st.file_uploader("Upload your Reddit CSV", type=["csv"])
 
 if uploaded_file:
@@ -44,24 +41,30 @@ if uploaded_file:
     col_to_analyze = st.selectbox("Select column to analyze:", df.columns)
     start = st.number_input("Start row (0-indexed)", min_value=0, max_value=len(df), value=0)
     end = st.number_input("End row (exclusive)", min_value=1, max_value=len(df), value=len(df))
+
     texts = df[col_to_analyze].iloc[start:end].astype(str).tolist()
+
+    # --- Track which analysis is active ---
+    if "active_analysis" not in st.session_state:
+        st.session_state.active_analysis = None
 
     # ==============================
     # Buttons side by side
     # ==============================
     col1, col2 = st.columns([1, 1])
     with col1:
-        run_sentiment = st.button(
-            "🚀 Run Sentiment Analysis",
-            use_container_width=True,
-            disabled=st.session_state.active_analysis == "emotion"
-        )
+        run_sentiment = st.button("🚀 Run Sentiment Analysis", use_container_width=True, key="btn_sent")
     with col2:
-        run_emotion = st.button(
-            "🎭 Run Emotion Analysis",
-            use_container_width=True,
-            disabled=st.session_state.active_analysis == "sentiment"
-        )
+        run_emotion = st.button("🎭 Run Emotion Analysis", use_container_width=True, key="btn_emo")
+
+    # Prevent running both
+    if run_sentiment and st.session_state.active_analysis == "emotion":
+        st.warning("⚠️ Please clear or download the Emotion Analysis table before running Sentiment Analysis.")
+        run_sentiment = False
+
+    if run_emotion and st.session_state.active_analysis == "sentiment":
+        st.warning("⚠️ Please clear or download the Sentiment Analysis table before running Emotion Analysis.")
+        run_emotion = False
 
     # ==============================
     # Sentiment Analysis
@@ -77,9 +80,9 @@ if uploaded_file:
         for i in range(0, len(texts), 32):
             batch = texts[i:i+32]
             results.extend(sentiment_model(batch, truncation=True, max_length=512))
-            percent = int(((i + len(batch)) / len(texts)) * 100)
+            percent = int(((i+len(batch)) / len(texts)) * 100)
             progress_bar.progress(percent)
-            status_text.text(f"Processed {i + len(batch)} / {len(texts)} comments ({percent}%)")
+            status_text.text(f"Processed {i+len(batch)} / {len(texts)} comments ({percent}%)")
             time.sleep(0.01)
 
         # Map labels
@@ -88,32 +91,33 @@ if uploaded_file:
         df_results["sentiment_label"] = [label_map[r["label"]] for r in results]
         df_results["sentiment_score"] = [r["score"] for r in results]
 
-        # Breakdown with Neutral
+        # --- Breakdown with Neutral ---
         sentiment_counts_all = Counter(df_results["sentiment_label"])
         total_all = sum(sentiment_counts_all.values())
         df_summary_all = pd.DataFrame([
-            {"Sentiment": k, "Count": v, "Percentage": round((v / total_all) * 100, 2)}
+            {"Sentiment": k, "Count": v, "Percentage": round((v/total_all)*100, 2)}
             for k, v in sentiment_counts_all.items()
         ])
         df_summary_all.loc[len(df_summary_all)] = ["Total", total_all, 100.0]
 
-        # Breakdown without Neutral (renormalized)
+        # --- Breakdown without Neutral (renormalized) ---
         sentiment_counts_wo = {k: v for k, v in sentiment_counts_all.items() if k.lower() != "neutral"}
         total_wo = sum(sentiment_counts_wo.values())
         df_summary_wo = pd.DataFrame([
-            {"Sentiment": k, "Count": v, "Percentage": round((v / total_wo) * 100, 2)}
+            {"Sentiment": k, "Count": v, "Percentage": round((v/total_wo)*100, 2)}
             for k, v in sentiment_counts_wo.items()
         ])
         df_summary_wo.loc[len(df_summary_wo)] = ["Total", total_wo, 100.0]
 
+        # Save to session
         st.session_state.sentiment_results = (df_results, df_summary_all, df_summary_wo)
 
     if st.session_state.active_analysis == "sentiment" and "sentiment_results" in st.session_state:
         df_results, df_summary_all, df_summary_wo = st.session_state.sentiment_results
+
         st.success("✅ Sentiment analysis complete!")
 
-        # Buttons row for Download + Clear
-        col_a, col_b = st.columns([1, 1])
+        col_a, col_b = st.columns([3, 1])
         with col_a:
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine="openpyxl") as writer:
@@ -125,10 +129,11 @@ if uploaded_file:
                 label="⬇️ Download Sentiment Results",
                 data=output,
                 file_name="reddit_sentiment_results.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="download_sent"
             )
         with col_b:
-            if st.button("🧹 Clear Table", use_container_width=True):
+            if st.button("🧹 Clear Table", use_container_width=True, key="clear_sent"):
                 st.session_state.active_analysis = None
                 del st.session_state["sentiment_results"]
                 st.rerun()
@@ -157,9 +162,9 @@ if uploaded_file:
         for i in range(0, len(texts), 16):
             batch = texts[i:i+16]
             results.extend(emotion_model(batch, truncation=True, max_length=512))
-            percent = int(((i + len(batch)) / len(texts)) * 100)
+            percent = int(((i+len(batch)) / len(texts)) * 100)
             progress_bar.progress(percent)
-            status_text.text(f"Processed {i + len(batch)} / {len(texts)} comments ({percent}%)")
+            status_text.text(f"Processed {i+len(batch)} / {len(texts)} comments ({percent}%)")
             time.sleep(0.01)
 
         # Pick dominant emotion
@@ -173,32 +178,33 @@ if uploaded_file:
         df_results["dominant_emotion"] = dominant_emotions
         df_results["emotion_score"] = dominant_scores
 
-        # Breakdown with Neutral
+        # --- Breakdown with Neutral ---
         emotion_counts_all = Counter(dominant_emotions)
         total_all = sum(emotion_counts_all.values())
         df_summary_all = pd.DataFrame([
-            {"Emotion": k, "Count": v, "Percentage": round((v / total_all) * 100, 2)}
+            {"Emotion": k, "Count": v, "Percentage": round((v/total_all)*100, 2)}
             for k, v in emotion_counts_all.items()
         ])
         df_summary_all.loc[len(df_summary_all)] = ["Total", total_all, 100.0]
 
-        # Breakdown without Neutral (renormalized)
+        # --- Breakdown without Neutral (renormalized) ---
         emotion_counts_wo = {k: v for k, v in emotion_counts_all.items() if k.lower() != "neutral"}
         total_wo = sum(emotion_counts_wo.values())
         df_summary_wo = pd.DataFrame([
-            {"Emotion": k, "Count": v, "Percentage": round((v / total_wo) * 100, 2)}
+            {"Emotion": k, "Count": v, "Percentage": round((v/total_wo)*100, 2)}
             for k, v in emotion_counts_wo.items()
         ])
         df_summary_wo.loc[len(df_summary_wo)] = ["Total", total_wo, 100.0]
 
+        # Save to session
         st.session_state.emotion_results = (df_results, df_summary_all, df_summary_wo)
 
     if st.session_state.active_analysis == "emotion" and "emotion_results" in st.session_state:
         df_results, df_summary_all, df_summary_wo = st.session_state.emotion_results
+
         st.success("✅ Emotion analysis complete!")
 
-        # Buttons row for Download + Clear
-        col_a, col_b = st.columns([1, 1])
+        col_a, col_b = st.columns([3, 1])
         with col_a:
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine="openpyxl") as writer:
@@ -210,10 +216,11 @@ if uploaded_file:
                 label="⬇️ Download Emotion Results",
                 data=output,
                 file_name="reddit_emotion_results.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="download_emo"
             )
         with col_b:
-            if st.button("🧹 Clear Table", use_container_width=True):
+            if st.button("🧹 Clear Table", use_container_width=True, key="clear_emo"):
                 st.session_state.active_analysis = None
                 del st.session_state["emotion_results"]
                 st.rerun()
