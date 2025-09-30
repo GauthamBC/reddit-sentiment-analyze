@@ -43,6 +43,10 @@ if uploaded_file:
     end = st.number_input("End row (exclusive)", min_value=1, max_value=len(df), value=len(df))
 
     texts = df[col_to_analyze].iloc[start:end].astype(str).tolist()
+  
+    # --- Track which analysis is active ---
+    if "active_analysis" not in st.session_state:
+        st.session_state.active_analysis = None
 
     # ==============================
     # Buttons side by side
