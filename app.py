@@ -243,17 +243,6 @@ with tabs[0]:
                           .drop_duplicates(subset=["url"])
                           .sort_values(["created_utc","subreddit"], ascending=[False,True])
                           .reset_index(drop=True))
-
-                    sub_summary = (df.groupby("subreddit", as_index=False)
-                                     .agg(threads=("url","count"), comments=("num_comments","sum"))
-                                     .sort_values(["comments","threads"], ascending=[False,False]))
-                                    if not all_rows:
-                    st.warning("⚠️ No threads matched your inputs.")
-                else:
-                    df = (pd.DataFrame(all_rows)
-                          .drop_duplicates(subset=["url"])
-                          .sort_values(["created_utc","subreddit"], ascending=[False,True])
-                          .reset_index(drop=True))
                 
                     sub_summary = (df.groupby("subreddit", as_index=False)
                                      .agg(threads=("url","count"), comments=("num_comments","sum"))
