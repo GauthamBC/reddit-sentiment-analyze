@@ -252,14 +252,19 @@ with tabs[0]:
                     with tab1: st.dataframe(df.reset_index(drop=True), use_container_width=True)
                     with tab2: st.dataframe(sub_summary.reset_index(drop=True), use_container_width=True)
 
-                    # Download
-                    csv = io.StringIO()
-                    df.to_csv(csv, index=False)
+                   # Download both tables into separate sheets in Excel
+                    output = io.BytesIO()
+                    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                        df.to_excel(writer, sheet_name="Full Results", index=False)
+                        sub_summary.to_excel(writer, sheet_name="Frequency Table", index=False)
+                    
+                    output.seek(0)
+                    
                     st.download_button(
-                        "⬇️ Download CSV",
-                        csv.getvalue(),
-                        "reddit_urls.csv",
-                        "text/csv",
+                        label="⬇️ Download Excel (Results + Frequency)",
+                        data=output,
+                        file_name="reddit_urls_results.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         use_container_width=True
                     )
 
