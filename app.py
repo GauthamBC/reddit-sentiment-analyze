@@ -43,7 +43,6 @@ tabs = st.tabs(["URLs Fetcher", "Comment scraper", "Sentiment / Emotion Analyzer
 # ==============================
 # Tab 1: Reddit URL Collector
 # ==============================
-# Load Reddit credentials from secrets.toml
 CLIENT_ID     = st.secrets["CLIENT_ID"]
 CLIENT_SECRET = st.secrets["CLIENT_SECRET"]
 USER_AGENT    = st.secrets["USER_AGENT"]
@@ -195,47 +194,46 @@ with tabs[0]:
                 progress = st.progress(0)
                 status   = st.empty()
                 
-                # First collect posts for all queries so we know the total workload
+                # Collect posts
                 all_posts = []
                 for expr in exprs:
                     posts = list(sub.search(expr, sort="new", time_filter="week", limit=per_query_limit or None))
                     all_posts.append((expr, posts))
                 total_posts = sum(len(posts) for _, posts in all_posts)
                 done = 0
-                
-                # Process posts with smooth progress
-                for idx, (expr, posts) in enumerate(all_posts):
+
+                for expr, posts in all_posts:
                     try:
                         ast = parse(tokenize(expr))
                     except Exception as e:
                         st.warning(f"⚠️ Skipped query '{expr}': {e}")
                         continue
-                
-                for j, post in enumerate(posts):
-                    ts = int(getattr(post,"created_utc",0))
-                    if ts < after_ts or ts > before_ts: 
-                        continue
-                    title = (post.title or "").lower()
-                    body  = (getattr(post,"selftext","") or "").lower()
-                    if not eval_node(ast, title, body, match_in): 
-                        continue
-                
-                    all_rows.append({
-                        "query": expr,
-                        "title": post.title,
-                        "subreddit": str(post.subreddit),
-                        "author": str(post.author) if post.author else "[deleted]",
-                        "created_utc": ts,
-                        "created_utc_iso": datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S %Z"),
-                        "num_comments": int(getattr(post,"num_comments",0)),
-                        "score": int(getattr(post,"score",0)),
-                        "url": f"https://www.reddit.com{post.permalink}"
-                    })
-                # Simple smooth progress bar (just visual, not tied to post counts)
-                for p in range(101):
-                    progress.progress(p)
-                    status.text(f"Loading... {p}%")
-                    time.sleep(0.01)
+
+                    for post in posts:
+                        ts = int(getattr(post,"created_utc",0))
+                        if ts < after_ts or ts > before_ts: 
+                            continue
+                        title = (post.title or "").lower()
+                        body  = (getattr(post,"selftext","") or "").lower()
+                        if not eval_node(ast, title, body, match_in): 
+                            continue
+
+                        all_rows.append({
+                            "query": expr,
+                            "title": post.title,
+                            "subreddit": str(post.subreddit),
+                            "author": str(post.author) if post.author else "[deleted]",
+                            "created_utc": ts,
+                            "created_utc_iso": datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S %Z"),
+                            "num_comments": int(getattr(post,"num_comments",0)),
+                            "score": int(getattr(post,"score",0)),
+                            "url": f"https://www.reddit.com{post.permalink}"
+                        })
+                        done += 1
+                        percent = int((done/total_posts)*100) if total_posts else 100
+                        progress.progress(min(percent,100))
+                        status.text(f"Processed {done}/{total_posts} posts ({percent}%)")
+
                 if not all_rows:
                     st.warning("⚠️ No threads matched your inputs.")
                 else:
@@ -295,6 +293,7 @@ with tabs[0]:
                             """,
                             unsafe_allow_html=True
                         )
+
 # ==============================
 # Tab 2: Comment Scraper
 # ==============================
@@ -311,18 +310,15 @@ with tabs[1]:
 with tabs[2]:
     st.subheader("📊 Sentiment / Emotion Analyzer")
 
-    # Track which analysis is active
     if "active_analysis" not in st.session_state:
         st.session_state.active_analysis = None
 
-    # Step 1: Upload file
     uploaded_file = st.file_uploader("Upload your Reddit CSV", type=["csv"])
 
     if uploaded_file:
         df = pd.read_csv(uploaded_file, header=0, on_bad_lines="skip")
         st.success(f"✅ Loaded file with {df.shape[0]} rows and {df.shape[1]} columns.")
 
-        # Step 2: Show extra controls
         col_to_analyze = st.selectbox("Select column to analyze:", df.columns)
         start = st.number_input("Start row (0-indexed)", min_value=0, max_value=len(df), value=0)
         end = st.number_input("End row (exclusive)", min_value=1, max_value=len(df), value=len(df))
@@ -334,20 +330,11 @@ with tabs[2]:
         with col2:
             run_emotion = st.button("🎭 Run Emotion Analysis", use_container_width=True, key="btn_emo")
 
-        # Prevent conflicts
-        if run_sentiment and st.session_state.active_analysis == "emotion":
-            st.warning("⚠️ Please clear the Emotion Analysis table before running Sentiment Analysis.")
-            run_sentiment = False
-        if run_emotion and st.session_state.active_analysis == "sentiment":
-            st.warning("⚠️ Please clear the Sentiment Analysis table before running Emotion Analysis.")
-            run_emotion = False
-
         # ==============================
         # Sentiment Analysis
         # ==============================
         if run_sentiment:
             st.session_state.active_analysis = "sentiment"
-
             st.info(f"Running sentiment analysis on {len(texts)} comments... ⏳")
             progress_bar = st.progress(0)
             status_text = st.empty()
@@ -386,7 +373,6 @@ with tabs[2]:
 
         if st.session_state.active_analysis == "sentiment" and "sentiment_results" in st.session_state:
             df_results, df_summary_all, df_summary_wo = st.session_state.sentiment_results
-
             st.success("✅ Sentiment analysis complete!")
             col_a, col_b = st.columns([1, 1])
             with col_a:
@@ -424,7 +410,6 @@ with tabs[2]:
         # ==============================
         if run_emotion:
             st.session_state.active_analysis = "emotion"
-
             st.info(f"Running emotion analysis on {len(texts)} comments... ⏳")
             progress_bar = st.progress(0)
             status_text = st.empty()
@@ -468,7 +453,6 @@ with tabs[2]:
 
         if st.session_state.active_analysis == "emotion" and "emotion_results" in st.session_state:
             df_results, df_summary_all, df_summary_wo = st.session_state.emotion_results
-
             st.success("✅ Emotion analysis complete!")
             col_a, col_b = st.columns([1, 1])
             with col_a:
@@ -481,9 +465,9 @@ with tabs[2]:
                 st.download_button(
                     label="⬇️ Download Emotion Results",
                     data=output,
-                    file_name="reddit_emotion_results.xlsx
+                    file_name="reddit_emotion_results.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key="download_e
+                    key="download_emo"
                 )
             with col_b:
                 if st.button("🧹 Clear Table", use_container_width=True, key="clear_emo"):
