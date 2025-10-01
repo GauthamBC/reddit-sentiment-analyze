@@ -4,6 +4,9 @@ from transformers import pipeline
 from collections import Counter
 import io
 import time
+import praw, re
+from datetime import datetime, date, timedelta, timezone
+from dateutil import parser as dtparse
 
 # ==============================
 # 1) Load Models
@@ -40,77 +43,218 @@ tabs = st.tabs(["URLs Fetcher", "Comment scraper", "Sentiment / Emotion Analyzer
 # ==============================
 # Tab 1: URLs Fetcher
 # ==============================
+# ==============================
+# Tab 1: Reddit URL Collector
+# ==============================
+import praw, re, time
+from datetime import datetime, date, timedelta, timezone
+from dateutil import parser as dtparse
+
+# ── Load credentials from secrets ────────────────────────────────
+CLIENT_ID     = st.secrets["CLIENT_ID"]
+CLIENT_SECRET = st.secrets["CLIENT_SECRET"]
+USER_AGENT    = st.secrets["USER_AGENT"]
+
+reddit = praw.Reddit(
+    client_id=CLIENT_ID,
+    client_secret=CLIENT_SECRET,
+    user_agent=USER_AGENT,
+    ratelimit_seconds=5
+)
+reddit.read_only = True  
+
 with tabs[0]:
-    st.subheader("🔗 URLs Fetcher")
+    st.subheader("🔗 Reddit URL Collector")
 
-    # Custom label with link
-    st.markdown(
-        "🔑 Enter your SerpAPI Key ([Get key](https://serpapi.com/dashboard)👈)",
-        unsafe_allow_html=True
+    queries = st.text_area(
+        "Enter Boolean queries (one per line)",
+        placeholder='Example:\n("Rory McIlroy" AND "Ryder Cup") OR "Bethpage"',
+        height=120
     )
 
-    # Input box (label collapsed so no extra space)
-    serpapi_key = st.text_input(
-        "Enter your SerpAPI Key",
-        type="password",
-        label_visibility="collapsed"
-    )
+    # Time window
+    time_mode = st.radio("Time range", ["Last N hours", "Last N days", "Custom dates"], horizontal=True)
+    hours = st.slider("Hours:", 1, 48, 24) if time_mode == "Last N hours" else None
+    days  = st.slider("Days:", 1, 7, 1) if time_mode == "Last N days" else None
+    if time_mode == "Custom dates":
+        from_date = st.date_input("From date", value=date.today())
+        to_date   = st.date_input("To date", value=date.today())
+    else:
+        from_date = to_date = None
 
-    google_url = st.text_input("🌐 Google Search URL", placeholder="Paste your Google Search URL here")
+    # Subreddits
+    subs_mode = st.radio("Subreddits", ["All", "Specific"], horizontal=True)
+    subs_text = ""
+    if subs_mode == "Specific":
+        subs_text = st.text_area("Enter subreddits (one per line)", placeholder="SquaredCircle\ngolf")
 
-    num_pages = st.slider("Number of Pages to Fetch", min_value=1, max_value=20, value=10)
+    match_in = st.selectbox("Match in", ["Title + Selftext", "Title only", "Selftext only"])
+    per_query_limit = st.number_input("Max posts per query (0 = unlimited)", min_value=0, value=0, step=1)
 
-    if st.button("Fetch URLs", use_container_width=True):
-        if not serpapi_key:
-            st.error("❌ Please enter your SerpAPI Key.")
-        elif not google_url:
-            st.error("❌ Please enter a Google Search URL.")
+    # Run button
+    if st.button("🚀 Run Reddit Collector", use_container_width=True):
+        if not queries.strip():
+            st.error("❌ Please enter at least one Boolean query.")
         else:
             try:
-                # Extract query from Google URL
-                parsed = urllib.parse.urlparse(google_url)
-                qs = urllib.parse.parse_qs(parsed.query)
-                query = qs.get("q")
-                if not query:
-                    st.error("❌ Could not extract query from the given URL")
+                # --- Time filters ---
+                now = datetime.now(timezone.utc)
+                if time_mode == "Last N hours":
+                    after_ts = int((now - timedelta(hours=hours)).timestamp()); before_ts = int(now.timestamp())
+                elif time_mode == "Last N days":
+                    after_ts = int((now - timedelta(days=days)).timestamp());  before_ts = int(now.timestamp())
                 else:
-                    query = query[0]
-                    urls = set()
-                    progress = st.progress(0)
+                    start_local = dtparse.parse(f"{from_date.isoformat()} 00:00").astimezone()
+                    end_local   = dtparse.parse(f"{to_date.isoformat()} 23:59").astimezone()
+                    after_ts = int(start_local.astimezone(timezone.utc).timestamp())
+                    before_ts= int(end_local.astimezone(timezone.utc).timestamp())
 
-                    for page in range(num_pages):
-                        params = {
-                            "engine": "google",
-                            "q": query,
-                            "start": page * 10,
-                            "num": 10,
-                            "api_key": serpapi_key,
-                        }
-                        res = requests.get("https://serpapi.com/search.json", params=params).json()
-                        for item in res.get("organic_results", []):
-                            link = item.get("link")
-                            if link:
-                                urls.add(link)
-                        progress.progress(int((page + 1) / num_pages * 100))
+                # --- Subreddits ---
+                if subs_mode == "All":
+                    sub_selector = "all"
+                else:
+                    sub_list = [s.strip() for s in subs_text.splitlines() if s.strip()]
+                    sub_selector = "+".join(sub_list) if sub_list else "all"
 
-                    urls = sorted(urls)
-                    if urls:
-                        st.success(f"✅ Found {len(urls)} unique URLs")
-                        st.dataframe(pd.DataFrame(urls, columns=["URL"]), use_container_width=True)
+                sub = reddit.subreddit(sub_selector)
 
-                        # Download button
-                        url_output = io.BytesIO()
-                        pd.DataFrame(urls, columns=["URL"]).to_csv(url_output, index=False)
-                        url_output.seek(0)
-                        st.download_button(
-                            label="⬇️ Download URLs CSV",
-                            data=url_output,
-                            file_name="fetched_urls.csv",
-                            mime="text/csv",
-                            use_container_width=True
-                        )
-                    else:
-                        st.warning("⚠️ No URLs found.")
+                # --- Boolean parser helpers ---
+                TOKEN_RE = re.compile(r'''
+                    ("[^"\\]*(?:\\.[^"\\]*)*")      
+                  | (\() | (\))                     
+                  | (?:\bAND\b|&&|&)                
+                  | (?:\bOR\b|\|\||\|)              
+                  | (?:\bNOT\b|!|-)                 
+                  | ([^\s()]+)                      
+                ''', re.IGNORECASE | re.VERBOSE)
+
+                def tokenize(expr:str):
+                    tokens=[]
+                    for m in TOKEN_RE.finditer(expr):
+                        if m.group(1): tokens.append(("TERM", m.group(1)[1:-1]))
+                        elif m.group(2): tokens.append(("LPAREN","("))
+                        elif m.group(3): tokens.append(("RPAREN",")"))
+                        else:
+                            t = m.group(0).strip(); u=t.upper()
+                            if u in ("AND","&&","&"): tokens.append(("AND","AND"))
+                            elif u in ("OR","||","|"): tokens.append(("OR","OR"))
+                            elif u in ("NOT","!","-"): tokens.append(("NOT","NOT"))
+                            else: tokens.append(("TERM", t))
+                    return tokens
+
+                class Node: pass
+                class Term(Node):  def __init__(self,s): self.s=s
+                class Not(Node):   def __init__(self,a): self.a=a
+                class And(Node):   def __init__(self,a,b): self.a=a; self.b=b
+                class Or(Node):    def __init__(self,a,b): self.a=a; self.b=b
+
+                def parse(tokens):
+                    i=0
+                    def parse_or():
+                        nonlocal i
+                        node = parse_and()
+                        while i<len(tokens) and tokens[i][0]=="OR":
+                            i+=1; node = Or(node, parse_and())
+                        return node
+                    def parse_and():
+                        nonlocal i
+                        node = parse_not()
+                        while i<len(tokens) and tokens[i][0]=="AND":
+                            i+=1; node = And(node, parse_not())
+                        return node
+                    def parse_not():
+                        nonlocal i
+                        if i<len(tokens) and tokens[i][0]=="NOT":
+                            i+=1; return Not(parse_not())
+                        return parse_atom()
+                    def parse_atom():
+                        nonlocal i
+                        if i<len(tokens) and tokens[i][0]=="LPAREN":
+                            i+=1; node = parse_or()
+                            if i>=len(tokens) or tokens[i][0]!="RPAREN": raise ValueError("Unclosed parenthesis")
+                            i+=1; return node
+                        if i<len(tokens) and tokens[i][0]=="TERM":
+                            s = tokens[i][1]; i+=1; return Term(s)
+                        raise ValueError("Unexpected token")
+                    node = parse_or()
+                    if i!=len(tokens): raise ValueError("Extra tokens")
+                    return node
+
+                def eval_node(node, title:str, body:str, where:str):
+                    def present(needle):
+                        n=needle.lower()
+                        if where=="Title only": return n in title
+                        if where=="Selftext only": return n in body
+                        return (n in title) or (n in body)
+                    if isinstance(node, Term):  return present(node.s)
+                    if isinstance(node, Not):   return not eval_node(node.a, title, body, where)
+                    if isinstance(node, And):   return eval_node(node.a, title, body, where) and eval_node(node.b, title, body, where)
+                    if isinstance(node, Or):    return eval_node(node.a, title, body, where) or eval_node(node.b, title, body, where)
+                    return False
+
+                # --- Run queries ---
+                exprs = [ln.strip() for ln in queries.splitlines() if ln.strip()]
+                all_rows = []
+                progress = st.progress(0)
+                status   = st.empty()
+
+                for idx, expr in enumerate(exprs):
+                    try:
+                        ast = parse(tokenize(expr))
+                    except Exception as e:
+                        st.warning(f"⚠️ Skipped query '{expr}': {e}")
+                        continue
+
+                    for post in sub.search(expr, sort="new", time_filter="week", limit=per_query_limit or None):
+                        ts = int(getattr(post,"created_utc",0))
+                        if ts<after_ts or ts>before_ts: continue
+                        title = (post.title or "").lower()
+                        body  = (getattr(post,"selftext","") or "").lower()
+                        if not eval_node(ast, title, body, match_in): continue
+                        all_rows.append({
+                            "query": expr,
+                            "title": post.title,
+                            "subreddit": str(post.subreddit),
+                            "author": str(post.author) if post.author else "[deleted]",
+                            "created_utc": ts,
+                            "created_utc_iso": datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S %Z"),
+                            "num_comments": int(getattr(post,"num_comments",0)),
+                            "score": int(getattr(post,"score",0)),
+                            "url": f"https://www.reddit.com{post.permalink}"
+                        })
+
+                    percent = int(((idx+1)/len(exprs))*100)
+                    progress.progress(percent)
+                    status.text(f"Processed {idx+1}/{len(exprs)} queries ({percent}%)")
+                    time.sleep(0.1)
+
+                if not all_rows:
+                    st.warning("⚠️ No threads matched your inputs.")
+                else:
+                    df = (pd.DataFrame(all_rows)
+                          .drop_duplicates(subset=["url"])
+                          .sort_values(["created_utc","subreddit"], ascending=[False,True])
+                          .reset_index(drop=True))
+
+                    sub_summary = (df.groupby("subreddit", as_index=False)
+                                     .agg(threads=("url","count"), comments=("num_comments","sum"))
+                                     .sort_values(["comments","threads"], ascending=[False,False]))
+
+                    tab1, tab2 = st.tabs(["📄 Full Results", "📊 Frequency Table"])
+                    with tab1: st.dataframe(df, use_container_width=True)
+                    with tab2: st.dataframe(sub_summary, use_container_width=True)
+
+                    # Download
+                    csv = io.StringIO()
+                    df.to_csv(csv, index=False)
+                    st.download_button(
+                        "⬇️ Download CSV",
+                        csv.getvalue(),
+                        "reddit_urls.csv",
+                        "text/csv",
+                        use_container_width=True
+                    )
+
             except Exception as e:
                 st.error(f"❌ Error: {e}")
 # ==============================
