@@ -202,7 +202,8 @@ with tabs[0]:
                         st.warning(f"⚠️ Skipped query '{expr}': {e}")
                         continue
 
-                    for post in sub.search(expr, sort="new", time_filter="week", limit=per_query_limit or None):
+                    posts = list(sub.search(expr, sort="new", time_filter="week", limit=per_query_limit or None))
+                    for j, post in enumerate(posts):
                         ts = int(getattr(post,"created_utc",0))
                         if ts<after_ts or ts>before_ts: continue
                         title = (post.title or "").lower()
@@ -219,6 +220,12 @@ with tabs[0]:
                             "score": int(getattr(post,"score",0)),
                             "url": f"https://www.reddit.com{post.permalink}"
                         })
+                    
+                        # update progress as % of all queries * posts
+                        total_steps = len(exprs)
+                        percent = int(((idx + j/len(posts) + 1) / total_steps) * 100)
+                        progress.progress(percent)
+                        status.text(f"Processed query {idx+1}/{len(exprs)}, post {j+1}/{len(posts)} ({percent}%)")
 
                     percent = int(((idx+1)/len(exprs))*100)
                     progress.progress(percent)
@@ -238,8 +245,8 @@ with tabs[0]:
                                      .sort_values(["comments","threads"], ascending=[False,False]))
 
                     tab1, tab2 = st.tabs(["📄 Full Results", "📊 Frequency Table"])
-                    with tab1: st.dataframe(df, use_container_width=True)
-                    with tab2: st.dataframe(sub_summary, use_container_width=True)
+                    with tab1: st.dataframe(df.reset_index(drop=True), use_container_width=True)
+                    with tab2: st.dataframe(sub_summary.reset_index(drop=True), use_container_width=True)
 
                     # Download
                     csv = io.StringIO()
