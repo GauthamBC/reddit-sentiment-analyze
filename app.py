@@ -212,13 +212,12 @@ with tabs[0]:
                         continue
                 
                     for j, post in enumerate(posts):
+                        done += 1  
                         ts = int(getattr(post,"created_utc",0))
-                        if ts < after_ts or ts > before_ts:
-                            continue
+                        if ts < after_ts or ts > before_ts: continue
                         title = (post.title or "").lower()
                         body  = (getattr(post,"selftext","") or "").lower()
-                        if not eval_node(ast, title, body, match_in):
-                            continue
+                        if not eval_node(ast, title, body, match_in): continue
                         all_rows.append({
                             "query": expr,
                             "title": post.title,
