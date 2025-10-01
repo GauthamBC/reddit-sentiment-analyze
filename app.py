@@ -231,13 +231,11 @@ with tabs[0]:
                         "score": int(getattr(post,"score",0)),
                         "url": f"https://www.reddit.com{post.permalink}"
                     })
-                
-                    # ✅ Update progress smoothly (increment once)
-                    done += 1
-                    percent = min(int((done / total_posts) * 100), 100)
-                    progress.progress(percent)
-                    status.text(f"Processed {done}/{total_posts} posts ({percent}%)")
-
+                # Simple smooth progress bar (just visual, not tied to post counts)
+                for p in range(101):
+                    progress.progress(p)
+                    status.text(f"Loading... {p}%")
+                    time.sleep(0.01)
                 if not all_rows:
                     st.warning("⚠️ No threads matched your inputs.")
                 else:
