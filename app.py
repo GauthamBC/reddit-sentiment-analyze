@@ -261,25 +261,40 @@ with tabs[0]:
                     with tab1: st.dataframe(df.reset_index(drop=True), use_container_width=True)
                     with tab2: st.dataframe(sub_summary.reset_index(drop=True), use_container_width=True)
 
-                   # Download both tables into separate sheets in Excel
-                    output = io.BytesIO()
-                    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-                        df.to_excel(writer, sheet_name="Full Results", index=False)
-                        sub_summary.to_excel(writer, sheet_name="Frequency Table", index=False)
+                    # Download + Copy buttons side by side
+                    col1, col2 = st.columns([1, 1])
                     
-                    output.seek(0)
+                    with col1:
+                        # Excel download
+                        output = io.BytesIO()
+                        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                            df.to_excel(writer, sheet_name="Full Results", index=False)
+                            sub_summary.to_excel(writer, sheet_name="Frequency Table", index=False)
+                        output.seek(0)
+                        st.download_button(
+                            label="⬇️ Download Excel",
+                            data=output,
+                            file_name="reddit_urls.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            use_container_width=True
+                        )
                     
-                    st.download_button(
-                        label="⬇️ Download Excel (Results + Frequency)",
-                        data=output,
-                        file_name="reddit_urls_results.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True
-                    )
-
-            except Exception as e:
-                st.error(f"❌ Error: {e}")
-
+                    with col2:
+                        # Copy URLs button + confirmation
+                        urls_text = "\n".join(df["url"].tolist())
+                        st.markdown(
+                            f"""
+                            <textarea id="urlsText" style="display:none;">{urls_text}</textarea>
+                            <button onclick="navigator.clipboard.writeText(document.getElementById('urlsText').value);
+                                             document.getElementById('copyConfirm').innerText='✅ Copied!'"
+                                    style="padding:0.5em 1em; width:100%; border:none; border-radius:6px;
+                                           background:#2196F3; color:white; cursor:pointer;">
+                                📋 Copy All URLs
+                            </button>
+                            <div id="copyConfirm" style="margin-top:5px; font-weight:bold; color:green;"></div>
+                            """,
+                            unsafe_allow_html=True
+                        )
 # ==============================
 # Tab 2: Comment Scraper
 # ==============================
