@@ -141,12 +141,28 @@ with tabs[0]:
                             elif u in ("NOT","!","-"): tokens.append(("NOT","NOT"))
                             else: tokens.append(("TERM", t))
                     return tokens
+                    
+                    class Node:
+                        pass
+                    
+                    class Term(Node):
+                        def __init__(self, s):
+                            self.s = s
+                    
+                    class Not(Node):
+                        def __init__(self, a):
+                            self.a = a
+                    
+                    class And(Node):
+                        def __init__(self, a, b):
+                            self.a = a
+                            self.b = b
+                    
+                    class Or(Node):
+                        def __init__(self, a, b):
+                            self.a = a
+                            self.b = b
 
-                class Node: pass
-                class Term(Node):  def __init__(self,s): self.s=s
-                class Not(Node):   def __init__(self,a): self.a=a
-                class And(Node):   def __init__(self,a,b): self.a=a; self.b=b
-                class Or(Node):    def __init__(self,a,b): self.a=a; self.b=b
 
                 def parse(tokens):
                     i=0
