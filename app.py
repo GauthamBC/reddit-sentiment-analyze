@@ -481,9 +481,9 @@ with tabs[2]:
                 st.download_button(
                     label="⬇️ Download Emotion Results",
                     data=output,
-                    file_name="reddit_emotion_results.xlsx",
+                    file_name="reddit_emotion_results.xlsx
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key="download_emo"
+                    key="download_e
                 )
             with col_b:
                 if st.button("🧹 Clear Table", use_container_width=True, key="clear_emo"):
