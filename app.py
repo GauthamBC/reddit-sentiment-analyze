@@ -41,16 +41,9 @@ st.title("📊 Reddit Comment Sentiment Analyzer")
 tabs = st.tabs(["URLs Fetcher", "Comment scraper", "Sentiment / Emotion Analyzer"])
 
 # ==============================
-# Tab 1: URLs Fetcher
-# ==============================
-# ==============================
 # Tab 1: Reddit URL Collector
 # ==============================
-import praw, re, time
-from datetime import datetime, date, timedelta, timezone
-from dateutil import parser as dtparse
-
-# ── Load credentials from secrets ────────────────────────────────
+# Load Reddit credentials from secrets.toml
 CLIENT_ID     = st.secrets["CLIENT_ID"]
 CLIENT_SECRET = st.secrets["CLIENT_SECRET"]
 USER_AGENT    = st.secrets["USER_AGENT"]
@@ -91,6 +84,84 @@ with tabs[0]:
     match_in = st.selectbox("Match in", ["Title + Selftext", "Title only", "Selftext only"])
     per_query_limit = st.number_input("Max posts per query (0 = unlimited)", min_value=0, value=0, step=1)
 
+    # --- Boolean parser helpers ---
+    TOKEN_RE = re.compile(r'''
+        ("[^"\\]*(?:\\.[^"\\]*)*")      
+      | (\() | (\))                     
+      | (?:\bAND\b|&&|&)                
+      | (?:\bOR\b|\|\||\|)              
+      | (?:\bNOT\b|!|-)                 
+      | ([^\s()]+)                      
+    ''', re.IGNORECASE | re.VERBOSE)
+
+    def tokenize(expr:str):
+        tokens=[]
+        for m in TOKEN_RE.finditer(expr):
+            if m.group(1): tokens.append(("TERM", m.group(1)[1:-1]))
+            elif m.group(2): tokens.append(("LPAREN","("))
+            elif m.group(3): tokens.append(("RPAREN",")"))
+            else:
+                t = m.group(0).strip(); u=t.upper()
+                if u in ("AND","&&","&"): tokens.append(("AND","AND"))
+                elif u in ("OR","||","|"): tokens.append(("OR","OR"))
+                elif u in ("NOT","!","-"): tokens.append(("NOT","NOT"))
+                else: tokens.append(("TERM", t))
+        return tokens
+
+    class Node: pass
+    class Term(Node):
+        def __init__(self, s): self.s = s
+    class Not(Node):
+        def __init__(self, a): self.a = a
+    class And(Node):
+        def __init__(self, a, b): self.a = a; self.b = b
+    class Or(Node):
+        def __init__(self, a, b): self.a = a; self.b = b
+
+    def parse(tokens):
+        i=0
+        def parse_or():
+            nonlocal i
+            node = parse_and()
+            while i<len(tokens) and tokens[i][0]=="OR":
+                i+=1; node = Or(node, parse_and())
+            return node
+        def parse_and():
+            nonlocal i
+            node = parse_not()
+            while i<len(tokens) and tokens[i][0]=="AND":
+                i+=1; node = And(node, parse_not())
+            return node
+        def parse_not():
+            nonlocal i
+            if i<len(tokens) and tokens[i][0]=="NOT":
+                i+=1; return Not(parse_not())
+            return parse_atom()
+        def parse_atom():
+            nonlocal i
+            if i<len(tokens) and tokens[i][0]=="LPAREN":
+                i+=1; node = parse_or()
+                if i>=len(tokens) or tokens[i][0]!="RPAREN": raise ValueError("Unclosed parenthesis")
+                i+=1; return node
+            if i<len(tokens) and tokens[i][0]=="TERM":
+                s = tokens[i][1]; i+=1; return Term(s)
+            raise ValueError("Unexpected token")
+        node = parse_or()
+        if i!=len(tokens): raise ValueError("Extra tokens")
+        return node
+
+    def eval_node(node, title:str, body:str, where:str):
+        def present(needle):
+            n=needle.lower()
+            if where=="Title only": return n in title
+            if where=="Selftext only": return n in body
+            return (n in title) or (n in body)
+        if isinstance(node, Term):  return present(node.s)
+        if isinstance(node, Not):   return not eval_node(node.a, title, body, where)
+        if isinstance(node, And):   return eval_node(node.a, title, body, where) and eval_node(node.b, title, body, where)
+        if isinstance(node, Or):    return eval_node(node.a, title, body, where) or eval_node(node.b, title, body, where)
+        return False
+
     # Run button
     if st.button("🚀 Run Reddit Collector", use_container_width=True):
         if not queries.strip():
@@ -117,96 +188,6 @@ with tabs[0]:
                     sub_selector = "+".join(sub_list) if sub_list else "all"
 
                 sub = reddit.subreddit(sub_selector)
-
-                # --- Boolean parser helpers ---
-                TOKEN_RE = re.compile(r'''
-                    ("[^"\\]*(?:\\.[^"\\]*)*")      
-                  | (\() | (\))                     
-                  | (?:\bAND\b|&&|&)                
-                  | (?:\bOR\b|\|\||\|)              
-                  | (?:\bNOT\b|!|-)                 
-                  | ([^\s()]+)                      
-                ''', re.IGNORECASE | re.VERBOSE)
-
-                def tokenize(expr:str):
-                    tokens=[]
-                    for m in TOKEN_RE.finditer(expr):
-                        if m.group(1): tokens.append(("TERM", m.group(1)[1:-1]))
-                        elif m.group(2): tokens.append(("LPAREN","("))
-                        elif m.group(3): tokens.append(("RPAREN",")"))
-                        else:
-                            t = m.group(0).strip(); u=t.upper()
-                            if u in ("AND","&&","&"): tokens.append(("AND","AND"))
-                            elif u in ("OR","||","|"): tokens.append(("OR","OR"))
-                            elif u in ("NOT","!","-"): tokens.append(("NOT","NOT"))
-                            else: tokens.append(("TERM", t))
-                    return tokens
-                    
-                    class Node:
-                        pass
-                    
-                    class Term(Node):
-                        def __init__(self, s):
-                            self.s = s
-                    
-                    class Not(Node):
-                        def __init__(self, a):
-                            self.a = a
-                    
-                    class And(Node):
-                        def __init__(self, a, b):
-                            self.a = a
-                            self.b = b
-                    
-                    class Or(Node):
-                        def __init__(self, a, b):
-                            self.a = a
-                            self.b = b
-
-
-                def parse(tokens):
-                    i=0
-                    def parse_or():
-                        nonlocal i
-                        node = parse_and()
-                        while i<len(tokens) and tokens[i][0]=="OR":
-                            i+=1; node = Or(node, parse_and())
-                        return node
-                    def parse_and():
-                        nonlocal i
-                        node = parse_not()
-                        while i<len(tokens) and tokens[i][0]=="AND":
-                            i+=1; node = And(node, parse_not())
-                        return node
-                    def parse_not():
-                        nonlocal i
-                        if i<len(tokens) and tokens[i][0]=="NOT":
-                            i+=1; return Not(parse_not())
-                        return parse_atom()
-                    def parse_atom():
-                        nonlocal i
-                        if i<len(tokens) and tokens[i][0]=="LPAREN":
-                            i+=1; node = parse_or()
-                            if i>=len(tokens) or tokens[i][0]!="RPAREN": raise ValueError("Unclosed parenthesis")
-                            i+=1; return node
-                        if i<len(tokens) and tokens[i][0]=="TERM":
-                            s = tokens[i][1]; i+=1; return Term(s)
-                        raise ValueError("Unexpected token")
-                    node = parse_or()
-                    if i!=len(tokens): raise ValueError("Extra tokens")
-                    return node
-
-                def eval_node(node, title:str, body:str, where:str):
-                    def present(needle):
-                        n=needle.lower()
-                        if where=="Title only": return n in title
-                        if where=="Selftext only": return n in body
-                        return (n in title) or (n in body)
-                    if isinstance(node, Term):  return present(node.s)
-                    if isinstance(node, Not):   return not eval_node(node.a, title, body, where)
-                    if isinstance(node, And):   return eval_node(node.a, title, body, where) and eval_node(node.b, title, body, where)
-                    if isinstance(node, Or):    return eval_node(node.a, title, body, where) or eval_node(node.b, title, body, where)
-                    return False
 
                 # --- Run queries ---
                 exprs = [ln.strip() for ln in queries.splitlines() if ln.strip()]
@@ -273,6 +254,7 @@ with tabs[0]:
 
             except Exception as e:
                 st.error(f"❌ Error: {e}")
+
 # ==============================
 # Tab 2: Comment Scraper
 # ==============================
@@ -477,4 +459,3 @@ with tabs[2]:
             with tab1: st.dataframe(df_results, use_container_width=True)
             with tab2: st.table(df_summary_all)
             with tab3: st.table(df_summary_wo)
-
