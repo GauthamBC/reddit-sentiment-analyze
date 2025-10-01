@@ -211,30 +211,32 @@ with tabs[0]:
                         st.warning(f"⚠️ Skipped query '{expr}': {e}")
                         continue
                 
-                    for j, post in enumerate(posts):
-                        done += 1  
-                        ts = int(getattr(post,"created_utc",0))
-                        if ts < after_ts or ts > before_ts: continue
-                        title = (post.title or "").lower()
-                        body  = (getattr(post,"selftext","") or "").lower()
-                        if not eval_node(ast, title, body, match_in): continue
-                        all_rows.append({
-                            "query": expr,
-                            "title": post.title,
-                            "subreddit": str(post.subreddit),
-                            "author": str(post.author) if post.author else "[deleted]",
-                            "created_utc": ts,
-                            "created_utc_iso": datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S %Z"),
-                            "num_comments": int(getattr(post,"num_comments",0)),
-                            "score": int(getattr(post,"score",0)),
-                            "url": f"https://www.reddit.com{post.permalink}"
-                        })
+                for j, post in enumerate(posts):
+                    ts = int(getattr(post,"created_utc",0))
+                    if ts < after_ts or ts > before_ts: 
+                        continue
+                    title = (post.title or "").lower()
+                    body  = (getattr(post,"selftext","") or "").lower()
+                    if not eval_node(ast, title, body, match_in): 
+                        continue
                 
-                        # ✅ Update progress smoothly
-                        done += 1
-                        percent = int((done / total_posts) * 100)
-                        progress.progress(min(percent, 100))
-                        status.text(f"Processed {done}/{total_posts} posts ({percent}%)")
+                    all_rows.append({
+                        "query": expr,
+                        "title": post.title,
+                        "subreddit": str(post.subreddit),
+                        "author": str(post.author) if post.author else "[deleted]",
+                        "created_utc": ts,
+                        "created_utc_iso": datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S %Z"),
+                        "num_comments": int(getattr(post,"num_comments",0)),
+                        "score": int(getattr(post,"score",0)),
+                        "url": f"https://www.reddit.com{post.permalink}"
+                    })
+                
+                    # ✅ Update progress smoothly (increment once)
+                    done += 1
+                    percent = min(int((done / total_posts) * 100), 100)
+                    progress.progress(percent)
+                    status.text(f"Processed {done}/{total_posts} posts ({percent}%)")
 
                 if not all_rows:
                     st.warning("⚠️ No threads matched your inputs.")
