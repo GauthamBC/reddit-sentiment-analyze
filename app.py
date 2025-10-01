@@ -194,21 +194,31 @@ with tabs[0]:
                 all_rows = []
                 progress = st.progress(0)
                 status   = st.empty()
-
-                for idx, expr in enumerate(exprs):
+                
+                # First collect posts for all queries so we know the total workload
+                all_posts = []
+                for expr in exprs:
+                    posts = list(sub.search(expr, sort="new", time_filter="week", limit=per_query_limit or None))
+                    all_posts.append((expr, posts))
+                total_posts = sum(len(posts) for _, posts in all_posts)
+                done = 0
+                
+                # Process posts with smooth progress
+                for idx, (expr, posts) in enumerate(all_posts):
                     try:
                         ast = parse(tokenize(expr))
                     except Exception as e:
                         st.warning(f"⚠️ Skipped query '{expr}': {e}")
                         continue
-
-                    posts = list(sub.search(expr, sort="new", time_filter="week", limit=per_query_limit or None))
+                
                     for j, post in enumerate(posts):
                         ts = int(getattr(post,"created_utc",0))
-                        if ts<after_ts or ts>before_ts: continue
+                        if ts < after_ts or ts > before_ts:
+                            continue
                         title = (post.title or "").lower()
                         body  = (getattr(post,"selftext","") or "").lower()
-                        if not eval_node(ast, title, body, match_in): continue
+                        if not eval_node(ast, title, body, match_in):
+                            continue
                         all_rows.append({
                             "query": expr,
                             "title": post.title,
@@ -220,17 +230,12 @@ with tabs[0]:
                             "score": int(getattr(post,"score",0)),
                             "url": f"https://www.reddit.com{post.permalink}"
                         })
-                    
-                        # update progress as % of all queries * posts
-                        total_steps = len(exprs)
-                        percent = int(((idx + j/len(posts) + 1) / total_steps) * 100)
-                        progress.progress(percent)
-                        status.text(f"Processed query {idx+1}/{len(exprs)}, post {j+1}/{len(posts)} ({percent}%)")
-
-                    percent = int(((idx+1)/len(exprs))*100)
-                    progress.progress(percent)
-                    status.text(f"Processed {idx+1}/{len(exprs)} queries ({percent}%)")
-                    time.sleep(0.1)
+                
+                        # ✅ Update progress smoothly
+                        done += 1
+                        percent = int((done / total_posts) * 100)
+                        progress.progress(min(percent, 100))
+                        status.text(f"Processed {done}/{total_posts} posts ({percent}%)")
 
                 if not all_rows:
                     st.warning("⚠️ No threads matched your inputs.")
