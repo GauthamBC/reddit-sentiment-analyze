@@ -201,15 +201,15 @@ with tabs[0]:
                     all_posts.append((expr, posts))
                 total_posts = sum(len(posts) for _, posts in all_posts)
                 done = 0
-
-                for expr, posts in all_posts:
+                
+                for idx, (expr, posts) in enumerate(all_posts):
                     try:
                         ast = parse(tokenize(expr))
                     except Exception as e:
                         st.warning(f"⚠️ Skipped query '{expr}': {e}")
                         continue
 
-                    for post in posts:
+                    for j, post in enumerate(posts):
                         ts = int(getattr(post,"created_utc",0))
                         if ts < after_ts or ts > before_ts: 
                             continue
@@ -217,7 +217,6 @@ with tabs[0]:
                         body  = (getattr(post,"selftext","") or "").lower()
                         if not eval_node(ast, title, body, match_in): 
                             continue
-
                         all_rows.append({
                             "query": expr,
                             "title": post.title,
@@ -230,9 +229,10 @@ with tabs[0]:
                             "url": f"https://www.reddit.com{post.permalink}"
                         })
                         done += 1
-                        percent = int((done/total_posts)*100) if total_posts else 100
+                        percent = int((done / total_posts) * 100) if total_posts else 100
                         progress.progress(min(percent,100))
                         status.text(f"Processed {done}/{total_posts} posts ({percent}%)")
+                        time.sleep(0.01)
 
                 if not all_rows:
                     st.warning("⚠️ No threads matched your inputs.")
@@ -246,7 +246,6 @@ with tabs[0]:
                                      .agg(threads=("url","count"), comments=("num_comments","sum"))
                                      .sort_values(["comments","threads"], ascending=[False,False]))
                 
-                    # ✅ Summary stats
                     total_posts = len(df)
                     total_comments = df["num_comments"].sum()
                     unique_subs = df["subreddit"].nunique()
@@ -259,11 +258,8 @@ with tabs[0]:
                     with tab1: st.dataframe(df.reset_index(drop=True), use_container_width=True)
                     with tab2: st.dataframe(sub_summary.reset_index(drop=True), use_container_width=True)
 
-                    # Download + Copy buttons side by side
                     col1, col2 = st.columns([1, 1])
-                    
                     with col1:
-                        # Excel download
                         output = io.BytesIO()
                         with pd.ExcelWriter(output, engine="openpyxl") as writer:
                             df.to_excel(writer, sheet_name="Full Results", index=False)
@@ -276,9 +272,7 @@ with tabs[0]:
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                             use_container_width=True
                         )
-                    
                     with col2:
-                        # Copy URLs button + confirmation
                         urls_text = "\n".join(df["url"].tolist())
                         st.markdown(
                             f"""
@@ -293,6 +287,8 @@ with tabs[0]:
                             """,
                             unsafe_allow_html=True
                         )
+            except Exception as e:
+                st.error(f"❌ Error while running collector: {e}")
 
 # ==============================
 # Tab 2: Comment Scraper
@@ -330,15 +326,18 @@ with tabs[2]:
         with col2:
             run_emotion = st.button("🎭 Run Emotion Analysis", use_container_width=True, key="btn_emo")
 
-        # ==============================
-        # Sentiment Analysis
-        # ==============================
+        if run_sentiment and st.session_state.active_analysis == "emotion":
+            st.warning("⚠️ Please clear the Emotion Analysis table before running Sentiment Analysis.")
+            run_sentiment = False
+        if run_emotion and st.session_state.active_analysis == "sentiment":
+            st.warning("⚠️ Please clear the Sentiment Analysis table before running Emotion Analysis.")
+            run_emotion = False
+
         if run_sentiment:
             st.session_state.active_analysis = "sentiment"
             st.info(f"Running sentiment analysis on {len(texts)} comments... ⏳")
             progress_bar = st.progress(0)
             status_text = st.empty()
-
             results = []
             for i in range(0, len(texts), 32):
                 batch = texts[i:i+32]
@@ -347,12 +346,10 @@ with tabs[2]:
                 progress_bar.progress(percent)
                 status_text.text(f"Processed {i+len(batch)} / {len(texts)} comments ({percent}%)")
                 time.sleep(0.01)
-
             label_map = {"LABEL_0": "Negative", "LABEL_1": "Neutral", "LABEL_2": "Positive"}
             df_results = df.iloc[start:end].copy()
             df_results["sentiment_label"] = [label_map[r["label"]] for r in results]
             df_results["sentiment_score"] = [r["score"] for r in results]
-
             sentiment_counts_all = Counter(df_results["sentiment_label"])
             total_all = sum(sentiment_counts_all.values())
             df_summary_all = pd.DataFrame([
@@ -360,7 +357,6 @@ with tabs[2]:
                 for k, v in sentiment_counts_all.items()
             ])
             df_summary_all.loc[len(df_summary_all)] = ["Total", total_all, 100.0]
-
             sentiment_counts_wo = {k: v for k, v in sentiment_counts_all.items() if k.lower() != "neutral"}
             total_wo = sum(sentiment_counts_wo.values())
             df_summary_wo = pd.DataFrame([
@@ -368,7 +364,6 @@ with tabs[2]:
                 for k, v in sentiment_counts_wo.items()
             ])
             df_summary_wo.loc[len(df_summary_wo)] = ["Total", total_wo, 100.0]
-
             st.session_state.sentiment_results = (df_results, df_summary_all, df_summary_wo)
 
         if st.session_state.active_analysis == "sentiment" and "sentiment_results" in st.session_state:
@@ -395,7 +390,6 @@ with tabs[2]:
                     st.session_state.active_analysis = None
                     del st.session_state["sentiment_results"]
                     st.rerun()
-
             tab1, tab2, tab3 = st.tabs([
                 "📄 Per-Comment Sentiment",
                 "📊 Sentiment Breakdown (All Sentiments)",
@@ -405,15 +399,11 @@ with tabs[2]:
             with tab2: st.table(df_summary_all)
             with tab3: st.table(df_summary_wo)
 
-        # ==============================
-        # Emotion Analysis
-        # ==============================
         if run_emotion:
             st.session_state.active_analysis = "emotion"
             st.info(f"Running emotion analysis on {len(texts)} comments... ⏳")
             progress_bar = st.progress(0)
             status_text = st.empty()
-
             results = []
             for i in range(0, len(texts), 16):
                 batch = texts[i:i+16]
@@ -422,17 +412,14 @@ with tabs[2]:
                 progress_bar.progress(percent)
                 status_text.text(f"Processed {i+len(batch)} / {len(texts)} comments ({percent}%)")
                 time.sleep(0.01)
-
             dominant_emotions, dominant_scores = [], []
             for r in results:
                 top = max(r, key=lambda x: x["score"])
                 dominant_emotions.append(top["label"])
                 dominant_scores.append(top["score"])
-
             df_results = df.iloc[start:end].copy()
             df_results["dominant_emotion"] = dominant_emotions
             df_results["emotion_score"] = dominant_scores
-
             emotion_counts_all = Counter(dominant_emotions)
             total_all = sum(emotion_counts_all.values())
             df_summary_all = pd.DataFrame([
@@ -440,7 +427,6 @@ with tabs[2]:
                 for k, v in emotion_counts_all.items()
             ])
             df_summary_all.loc[len(df_summary_all)] = ["Total", total_all, 100.0]
-
             emotion_counts_wo = {k: v for k, v in emotion_counts_all.items() if k.lower() != "neutral"}
             total_wo = sum(emotion_counts_wo.values())
             df_summary_wo = pd.DataFrame([
@@ -448,7 +434,6 @@ with tabs[2]:
                 for k, v in emotion_counts_wo.items()
             ])
             df_summary_wo.loc[len(df_summary_wo)] = ["Total", total_wo, 100.0]
-
             st.session_state.emotion_results = (df_results, df_summary_all, df_summary_wo)
 
         if st.session_state.active_analysis == "emotion" and "emotion_results" in st.session_state:
@@ -474,7 +459,6 @@ with tabs[2]:
                     st.session_state.active_analysis = None
                     del st.session_state["emotion_results"]
                     st.rerun()
-
             tab1, tab2, tab3 = st.tabs([
                 "📄 Per-Comment Emotion",
                 "📊 Emotion Breakdown (All Emotions)",
