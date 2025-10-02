@@ -167,7 +167,6 @@ with tabs[0]:
             st.error("❌ Please enter at least one Boolean query.")
         else:
             try:
-                # --- Time filters ---
                 now = datetime.now(timezone.utc)
                 if time_mode == "Last N hours":
                     after_ts = int((now - timedelta(hours=hours)).timestamp()); before_ts = int(now.timestamp())
@@ -179,7 +178,6 @@ with tabs[0]:
                     after_ts = int(start_local.astimezone(timezone.utc).timestamp())
                     before_ts= int(end_local.astimezone(timezone.utc).timestamp())
 
-                # --- Subreddits ---
                 if subs_mode == "All":
                     sub_selector = "all"
                 else:
@@ -188,13 +186,11 @@ with tabs[0]:
 
                 sub = reddit.subreddit(sub_selector)
 
-                # --- Run queries ---
                 exprs = [ln.strip() for ln in queries.splitlines() if ln.strip()]
                 all_rows = []
                 progress = st.progress(0)
                 status   = st.empty()
                 
-                # Collect posts
                 all_posts = []
                 for expr in exprs:
                     posts = list(sub.search(expr, sort="new", time_filter="week", limit=per_query_limit or None))
@@ -209,7 +205,7 @@ with tabs[0]:
                         st.warning(f"⚠️ Skipped query '{expr}': {e}")
                         continue
 
-                    for j, post in enumerate(posts):
+                    for post in posts:
                         ts = int(getattr(post,"created_utc",0))
                         if ts < after_ts or ts > before_ts: 
                             continue
@@ -259,7 +255,9 @@ with tabs[0]:
                     with tab2: st.dataframe(sub_summary.reset_index(drop=True), use_container_width=True)
 
                     col1, col2 = st.columns([1, 1])
+                    
                     with col1:
+                        # Excel download
                         output = io.BytesIO()
                         with pd.ExcelWriter(output, engine="openpyxl") as writer:
                             df.to_excel(writer, sheet_name="Full Results", index=False)
@@ -272,21 +270,22 @@ with tabs[0]:
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                             use_container_width=True
                         )
+                    
                     with col2:
                         urls_text = "\n".join(df["url"].tolist())
                         st.markdown(
                             f"""
-                            <textarea id="urlsText" style="display:none;">{urls_text}</textarea>
-                            <button onclick="navigator.clipboard.writeText(document.getElementById('urlsText').value);
-                                             document.getElementById('copyConfirm').innerText='✅ Copied!'"
+                            <button onclick="navigator.clipboard.writeText(`{urls_text}`);
+                                             document.getElementById('copyConfirm').innerText='✅ Copied to clipboard!'"
                                     style="padding:0.5em 1em; width:100%; border:none; border-radius:6px;
-                                           background:#2196F3; color:white; cursor:pointer;">
+                                           background:#2196F3; color:white; cursor:pointer; font-size:16px;">
                                 📋 Copy All URLs
                             </button>
                             <div id="copyConfirm" style="margin-top:5px; font-weight:bold; color:green;"></div>
                             """,
                             unsafe_allow_html=True
                         )
+
             except Exception as e:
                 st.error(f"❌ Error while running collector: {e}")
 
