@@ -81,7 +81,8 @@ with tabs[0]:
         subs_mode = st.radio("Subreddits", ["All", "Specific"], horizontal=True)
         if subs_mode == "Specific":
             subs_text = st.text_area("Enter subreddits (one per line)", placeholder="SquaredCircle\ngolf")
-            sub_list = [s.strip().lstrip("r/") for s in subs_text.splitlines() if s.strip()]
+            sub_list = [re.sub(r"^r/", "", s.strip(), flags=re.IGNORECASE) for s in subs_text.splitlines() if s.strip()]
+
         else:
             sub_list = ["all"]
 
@@ -203,7 +204,7 @@ with tabs[0]:
             query_lines = [q.strip() for q in queries_text.splitlines() if q.strip()]
             pairs = []
             if pairing_enabled:
-                sub_lines = [s.strip().lstrip("r/") for s in pairing_subs_text.splitlines()]
+                sub_lines = [re.sub(r"^r/", "", s.strip(), flags=re.IGNORECASE) for s in pairing_subs_text.splitlines()]
                 for i, expr in enumerate(query_lines):
                     sub_in = sub_lines[i] if i < len(sub_lines) and sub_lines[i] else "all"
                     pairs.append((expr, sub_in))
