@@ -112,29 +112,32 @@ with tabs[0]:
     max_comments_per_sub = st.number_input("Stop after N total comments per subreddit", min_value=100, value=2000)
     global_comment_cap = st.number_input("Global comment cap (0 = unlimited)", min_value=0, value=0)
 
-    # --- Boolean parser / evaluator (same as Colab)
-    TOKEN_RE = re.compile(r'''
-        ("[^"\\]*(?:\\.[^"\\]*)*")|(\()|(\))|
-        (?:\bAND\b|&&|&)|(?:\bOR\b|\|\||\|)|
-        (?:\bNOT\b|!|-)|
-        ([^\s()]+)
-    ''', re.IGNORECASE | re.VERBOSE)
+ # --- Boolean parser / evaluator (same as Colab)
+TOKEN_RE = re.compile(r'''
+    ("[^"\\]*(?:\\.[^"\\]*)*")|(\()|(\))|
+    (?:\bAND\b|&&|&)|(?:\bOR\b|\|\||\|)|
+    (?:\bNOT\b|!|-)|([^\s()]+)
+''', re.IGNORECASE | re.VERBOSE)
 
-    class Node:
+class Node:
     pass
+
 
 class Term(Node):
     def __init__(self, s):
         self.s = s
 
+
 class Not(Node):
     def __init__(self, a):
         self.a = a
+
 
 class And(Node):
     def __init__(self, a, b):
         self.a = a
         self.b = b
+
 
 class Or(Node):
     def __init__(self, a, b):
