@@ -81,28 +81,30 @@ with tabs[0]:
         end_local = dtparse.parse(f"{to_date.isoformat()} 23:59").astimezone()
         after_ts = int(start_local.astimezone(timezone.utc).timestamp())
         before_ts = int(end_local.astimezone(timezone.utc).timestamp())
-
     # --- Subreddit pairing or mode selection ---
     pairing_enabled = st.checkbox("Enable per-query subreddit targeting", value=False)
 
     if pairing_enabled:
-         st.markdown(
+        st.markdown(
             "<small>✅ Each query line will target the subreddit on the same line below.<br>"
             "For example, if your first query is about <b>stress</b> and your first subreddit line is <b>azcardinals</b>, "
             "that query will only search in <b>r/azcardinals</b>.</small>",
             unsafe_allow_html=True
         )
+
         pairing_subs_text = st.text_area(
             "Enter subreddits (one per line matching each query)",
             placeholder="azcardinals\nfalcons",
             height=100
         )
+
         query_lines = [q.strip() for q in queries.splitlines() if q.strip()]
         sub_lines = [s.strip().lstrip("r/") for s in pairing_subs_text.splitlines() if s.strip()]
         pairs = [
             (query_lines[i], sub_lines[i] if i < len(sub_lines) else "all")
             for i in range(len(query_lines))
         ]
+
     else:
         subs_mode = st.radio("Subreddits", ["All", "Specific"], horizontal=True)
         if subs_mode == "Specific":
@@ -116,6 +118,7 @@ with tabs[0]:
             for q in [ln.strip() for ln in queries.splitlines() if ln.strip()]
             for s in sub_list
         ]
+   
 
     match_in = st.selectbox("Match in", ["Title + Selftext", "Title only", "Selftext only"])
     per_query_limit = st.number_input("Max posts per query (0 = unlimited)", min_value=0, value=0, step=1)
