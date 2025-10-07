@@ -405,17 +405,32 @@ with tabs[0]:
 with tabs[1]:
     st.subheader("💬 Comment Scraper")
 
-    urls = st.text_area("URLs:", placeholder="Paste Reddit URLs, one per line")
+    urls = st.text_area(
+        "URLs:",
+        placeholder="Paste Reddit URLs, one per line",
+        height=180,
+        help="Each line should be a full Reddit thread URL, e.g. https://www.reddit.com/r/eagles/comments/abcd12/title_here/"
+    )
 
-    # 👇 User chooses max comments per URL
+    # 👇 User sets max comments per URL
     max_comments_per_url = st.number_input(
         "Max comments to scrape per URL",
         min_value=10,
         max_value=5000,
         value=2000,
         step=10,
-        help="Limit how many comments to collect per Reddit post"
+        help="Limit how many comments to collect from each Reddit post"
     )
+
+    # --- Helper to extract submission ID from URL
+    import re
+    def extract_submission_id(url: str):
+        """
+        Extract the Reddit submission ID from a post URL.
+        Works for any standard Reddit link with /comments/<id>/ pattern.
+        """
+        match = re.search(r"/comments/([a-z0-9]+)/", url)
+        return match.group(1) if match else None
 
     if st.button("🚀 Scrape Comments", use_container_width=True):
         url_list = [u.strip() for u in urls.splitlines() if u.strip()]
@@ -429,19 +444,29 @@ with tabs[1]:
             status = st.empty()
 
             for idx, url in enumerate(url_list):
-                try:
-                    # Convert full URL to submission ID
-                    submission_id = url.rstrip("/").split("/")[-3]
-                    submission = reddit.submission(id=submission_id)
+                submission_id = extract_submission_id(url)
+                if not submission_id:
+                    st.warning(f"⚠️ Could not extract post ID from URL: {url}")
+                    continue
 
+                try:
+                    submission = reddit.submission(id=submission_id)
+                    if submission is None or getattr(submission, "num_comments", 0) == 0:
+                        st.warning(f"⚠️ Skipping deleted or empty post: {url}")
+                        continue
+
+                    # Expand all comments (replace 'MoreComments' placeholders)
                     submission.comments.replace_more(limit=None)
                     count = 0
+
                     for comment in submission.comments.list():
                         body = getattr(comment, "body", "").strip()
                         if not body:
                             continue
                         all_comments.append({
-                            "url": url,
+                            "thread_url": url,
+                            "subreddit": str(submission.subreddit),
+                            "post_title": submission.title,
                             "author": str(comment.author) if comment.author else "[deleted]",
                             "score": comment.score,
                             "created_utc": datetime.fromtimestamp(comment.created_utc, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S %Z"),
@@ -449,23 +474,28 @@ with tabs[1]:
                         })
                         count += 1
                         if count >= max_comments_per_url:
-                            break  # 👈 Stop when limit reached
-                    status.text(f"✅ {idx+1}/{len(url_list)} — {count} comments from {url}")
+                            break  # ⛔ Stop when per-URL limit reached
+
+                    status.text(f"✅ {idx+1}/{len(url_list)} — {count:,} comments from {url}")
                     time.sleep(0.3)
 
                 except Exception as e:
                     st.warning(f"⚠️ Failed to scrape {url}: {e}")
+                    continue
 
                 progress.progress(int(((idx + 1) / len(url_list)) * 100))
 
+            # --- Results display and export
             if not all_comments:
                 st.warning("⚠️ No comments scraped.")
             else:
                 df_comments = pd.DataFrame(all_comments)
-                st.success(f"✅ Scraped {len(df_comments)} comments total from {len(url_list)} URLs.")
+                st.success(f"✅ Scraped {len(df_comments):,} comments total from {len(url_list)} URLs.")
 
-                # Preview + download
+                # Display preview
                 st.dataframe(df_comments.head(20), use_container_width=True)
+
+                # Allow export
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine="openpyxl") as writer:
                     df_comments.to_excel(writer, index=False, sheet_name="Reddit Comments")
@@ -477,7 +507,6 @@ with tabs[1]:
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=True
                 )
-
 # ==============================
 # Tab 3: Sentiment / Emotion Analyzer
 # ==============================
