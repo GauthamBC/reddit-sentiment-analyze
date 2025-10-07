@@ -120,11 +120,26 @@ with tabs[0]:
         ([^\s()]+)
     ''', re.IGNORECASE | re.VERBOSE)
 
-    class Node: pass
-    class Term(Node):  def __init__(self, s): self.s = s
-    class Not(Node):   def __init__(self, a): self.a = a
-    class And(Node):   def __init__(self, a,b): self.a,self.b = a,b
-    class Or(Node):    def __init__(self, a,b): self.a,self.b = a,b
+    class Node:
+    pass
+
+    class Term(Node):
+        def __init__(self, s):
+            self.s = s
+    
+    class Not(Node):
+        def __init__(self, a):
+            self.a = a
+    
+    class And(Node):
+        def __init__(self, a, b):
+            self.a = a
+            self.b = b
+    
+    class Or(Node):
+        def __init__(self, a, b):
+            self.a = a
+            self.b = b
 
     def tokenize(expr:str):
         tokens=[]
