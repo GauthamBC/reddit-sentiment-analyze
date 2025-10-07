@@ -402,8 +402,6 @@ with tabs[0]:
 # ==============================
 # Tab 2: Comment Scraper
 # ==============================
-import requests
-
 with tabs[1]:
     st.subheader("💬 Comment Scraper")
 
@@ -411,10 +409,10 @@ with tabs[1]:
         "URLs:",
         placeholder="Paste Reddit URLs, one per line",
         height=180,
-        help="Each line should be a full Reddit thread URL, e.g. https://www.reddit.com/r/49ers/comments/abcd12/title/"
+        help="Each line should be a full Reddit thread URL, e.g. https://www.reddit.com/r/eagles/comments/abcd12/title_here/"
     )
 
-    # user sets comment cap
+    # 👇 User sets max comments per URL
     max_comments_per_url = st.number_input(
         "Max comments to scrape per URL",
         min_value=10,
@@ -424,9 +422,23 @@ with tabs[1]:
         help="Limit how many comments to collect from each Reddit post"
     )
 
+    # --- Helper to extract submission ID from URL
+    import re, requests
+
     def extract_submission_id(url: str):
-        m = re.search(r"/comments/([a-z0-9]+)/", url)
-        return m.group(1) if m else None
+        """Extract Reddit submission ID from URL (/comments/<id>/ pattern)."""
+        match = re.search(r"/comments/([a-z0-9]+)/", url)
+        return match.group(1) if match else None
+
+    # --- Initialize Reddit with FULL login (username + password)
+    reddit = praw.Reddit(
+        client_id=st.secrets["CLIENT_ID"],
+        client_secret=st.secrets["CLIENT_SECRET"],
+        username=st.secrets["REDDIT_USERNAME"],
+        password=st.secrets["REDDIT_PASSWORD"],
+        user_agent=st.secrets["USER_AGENT"],
+        ratelimit_seconds=5
+    )
 
     if st.button("🚀 Scrape Comments", use_container_width=True):
         url_list = [u.strip() for u in urls.splitlines() if u.strip()]
@@ -445,83 +457,92 @@ with tabs[1]:
                     st.warning(f"⚠️ Could not extract post ID from URL: {url}")
                     continue
 
-                count = 0
-                scraped = []
+                comments_for_post = []
+
+                # ==============================
+                # 1️⃣ Try Official Reddit API via PRAW
+                # ==============================
                 try:
-                    # ----- Try PRAW first -----
                     submission = reddit.submission(id=submission_id)
-                    submission.comments.replace_more(limit=None)
-                    for c in submission.comments.list():
-                        if not getattr(c, "body", "").strip():
-                            continue
-                        scraped.append({
-                            "thread_url": url,
-                            "subreddit": str(submission.subreddit),
-                            "post_title": submission.title,
-                            "author": str(c.author) if c.author else "[deleted]",
-                            "score": c.score,
-                            "created_utc": datetime.fromtimestamp(
-                                c.created_utc, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S %Z"),
-                            "body": c.body.strip()
-                        })
-                        count += 1
-                        if count >= max_comments_per_url:
-                            break
-                except Exception as e:
-                    st.info(f"⚠️ PRAW failed for {url} — switching to JSON ({e})")
-                    scraped = []
-
-                # ----- Fallback: Reddit JSON endpoint -----
-                if not scraped:
-                    json_url = url.rstrip("/") + ".json?limit=5000"
-                    try:
-                        headers = {"User-Agent": USER_AGENT}
-                        res = requests.get(json_url, headers=headers, timeout=20)
-                        if res.status_code == 200:
-                            data = res.json()
-                            comments = data[1]["data"]["children"]
-                            for item in comments:
-                                if item["kind"] != "t1":
-                                    continue
-                                body = item["data"].get("body", "").strip()
-                                if not body:
-                                    continue
-                                scraped.append({
-                                    "thread_url": url,
-                                    "subreddit": item["data"].get("subreddit", ""),
-                                    "post_title": data[0]["data"]["children"][0]["data"].get("title", ""),
-                                    "author": item["data"].get("author", "[deleted]"),
-                                    "score": item["data"].get("score", 0),
-                                    "created_utc": datetime.fromtimestamp(
-                                        item["data"].get("created_utc", 0),
-                                        tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S %Z"),
-                                    "body": body
-                                })
-                                count += 1
-                                if count >= max_comments_per_url:
-                                    break
+                    if submission is None or getattr(submission, "num_comments", 0) == 0:
+                        st.warning(f"⚠️ Skipping deleted or empty post: {url}")
+                    else:
+                        submission.comments.replace_more(limit=None)
+                        count = 0
+                        for comment in submission.comments.list():
+                            body = getattr(comment, "body", "").strip()
+                            if not body:
+                                continue
+                            comments_for_post.append({
+                                "thread_url": url,
+                                "subreddit": str(submission.subreddit),
+                                "post_title": submission.title,
+                                "author": str(comment.author) if comment.author else "[deleted]",
+                                "score": comment.score,
+                                "created_utc": datetime.fromtimestamp(comment.created_utc, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S %Z"),
+                                "body": body
+                            })
+                            count += 1
+                            if count >= max_comments_per_url:
+                                break
+                        if comments_for_post:
+                            st.info(f"✅ PRAW fetched {len(comments_for_post)} comments from {url}")
                         else:
-                            st.warning(f"⚠️ JSON fetch failed for {url} ({res.status_code})")
+                            st.warning(f"⚠️ No comments found via PRAW for {url}")
+                except Exception as e:
+                    st.warning(f"⚠️ PRAW failed for {url} — switching to Pushshift ({e})")
+
+                # ==============================
+                # 2️⃣ Fallback: Pushshift API (for archived/restricted threads)
+                # ==============================
+                if not comments_for_post:
+                    try:
+                        push_url = f"https://api.pushshift.io/reddit/comment/search/?link_id=t3_{submission_id}&limit={max_comments_per_url}"
+                        r = requests.get(push_url, timeout=20)
+                        if r.status_code == 200:
+                            data = r.json().get("data", [])
+                            for d in data:
+                                body = d.get("body", "").strip()
+                                if body:
+                                    comments_for_post.append({
+                                        "thread_url": url,
+                                        "subreddit": d.get("subreddit"),
+                                        "post_title": "",
+                                        "author": d.get("author"),
+                                        "score": d.get("score"),
+                                        "created_utc": datetime.fromtimestamp(d.get("created_utc", 0), tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S %Z"),
+                                        "body": body
+                                    })
+                            if comments_for_post:
+                                st.info(f"✅ Pushshift fetched {len(comments_for_post)} comments from {url}")
+                            else:
+                                st.warning(f"⚠️ Pushshift returned no comments for {url}")
+                        else:
+                            st.warning(f"⚠️ Pushshift fetch failed ({r.status_code}) for {url}")
                     except Exception as e:
-                        st.warning(f"⚠️ JSON error for {url}: {e}")
+                        st.warning(f"⚠️ JSON/Pushshift fetch failed for {url} ({e})")
 
-                if scraped:
-                    all_comments.extend(scraped)
-                    status.text(f"✅ {idx+1}/{len(url_list)} — {count:,} comments from {url}")
-                else:
-                    status.text(f"⚠️ No comments found for {url}")
+                # ==============================
+                # 3️⃣ Aggregate and rate-limit
+                # ==============================
+                all_comments.extend(comments_for_post)
+                status.text(f"Processed {idx + 1}/{len(url_list)} | {len(comments_for_post)} comments from {url}")
                 progress.progress(int(((idx + 1) / len(url_list)) * 100))
-                time.sleep(0.3)
+                time.sleep(2)  # gentle delay to avoid rate limits
 
-            # ----- Output -----
+            # ==============================
+            # 4️⃣ Results display + export
+            # ==============================
             if not all_comments:
                 st.warning("⚠️ No comments scraped.")
             else:
                 df_comments = pd.DataFrame(all_comments)
                 st.success(f"✅ Scraped {len(df_comments):,} comments total from {len(url_list)} URLs.")
 
+                # Display preview
                 st.dataframe(df_comments.head(20), use_container_width=True)
 
+                # Allow export
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine="openpyxl") as writer:
                     df_comments.to_excel(writer, index=False, sheet_name="Reddit Comments")
