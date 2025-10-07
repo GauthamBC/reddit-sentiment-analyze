@@ -112,12 +112,13 @@ with tabs[0]:
     max_comments_per_sub = st.number_input("Stop after N total comments per subreddit", min_value=100, value=2000)
     global_comment_cap = st.number_input("Global comment cap (0 = unlimited)", min_value=0, value=0)
 
- # --- Boolean parser / evaluator (same as Colab)
+# --- Boolean parser / evaluator (same as Colab)
 TOKEN_RE = re.compile(r'''
     ("[^"\\]*(?:\\.[^"\\]*)*")|(\()|(\))|
     (?:\bAND\b|&&|&)|(?:\bOR\b|\|\||\|)|
     (?:\bNOT\b|!|-)|([^\s()]+)
 ''', re.IGNORECASE | re.VERBOSE)
+
 
 class Node:
     pass
@@ -144,67 +145,108 @@ class Or(Node):
         self.a = a
         self.b = b
 
-    def tokenize(expr:str):
-        tokens=[]
-        for m in TOKEN_RE.finditer(expr):
-            if m.group(1): tokens.append(("TERM", m.group(1)[1:-1]))
-            elif m.group(2): tokens.append(("LPAREN","("))
-            elif m.group(3): tokens.append(("RPAREN",")"))
-            else:
-                t=m.group(0).strip(); u=t.upper()
-                if u in ("AND","&&","&"): tokens.append(("AND","AND"))
-                elif u in ("OR","||","|"): tokens.append(("OR","OR"))
-                elif u in ("NOT","!","-"): tokens.append(("NOT","NOT"))
-                else: tokens.append(("TERM",t))
-        return tokens
 
-    def parse(tokens):
-        i=0
-        def parse_or():
-            nonlocal i; node=parse_and()
-            while i<len(tokens) and tokens[i][0]=="OR": i+=1; node=Or(node,parse_and())
-            return node
-        def parse_and():
-            nonlocal i; node=parse_not()
-            while i<len(tokens) and tokens[i][0]=="AND": i+=1; node=And(node,parse_not())
-            return node
-        def parse_not():
-            nonlocal i
-            if i<len(tokens) and tokens[i][0]=="NOT": i+=1; return Not(parse_not())
-            return parse_atom()
-        def parse_atom():
-            nonlocal i
-            if i<len(tokens) and tokens[i][0]=="LPAREN":
-                i+=1; node=parse_or()
-                if i>=len(tokens) or tokens[i][0]!="RPAREN": raise ValueError("Unclosed parenthesis")
-                i+=1; return node
-            if i<len(tokens) and tokens[i][0]=="TERM": s=tokens[i][1]; i+=1; return Term(s)
-            raise ValueError("Unexpected token")
-        node=parse_or()
-        if i!=len(tokens): raise ValueError("Extra tokens")
+def tokenize(expr: str):
+    tokens = []
+    for m in TOKEN_RE.finditer(expr):
+        if m.group(1):
+            tokens.append(("TERM", m.group(1)[1:-1]))
+        elif m.group(2):
+            tokens.append(("LPAREN", "("))
+        elif m.group(3):
+            tokens.append(("RPAREN", ")"))
+        else:
+            t = m.group(0).strip()
+            u = t.upper()
+            if u in ("AND", "&&", "&"):
+                tokens.append(("AND", "AND"))
+            elif u in ("OR", "||", "|"):
+                tokens.append(("OR", "OR"))
+            elif u in ("NOT", "!", "-"):
+                tokens.append(("NOT", "NOT"))
+            else:
+                tokens.append(("TERM", t))
+    return tokens
+
+
+def parse(tokens):
+    i = 0
+
+    def parse_or():
+        nonlocal i
+        node = parse_and()
+        while i < len(tokens) and tokens[i][0] == "OR":
+            i += 1
+            node = Or(node, parse_and())
         return node
 
-    def eval_node(node,title,body,where):
-        def present(needle):
-            n=needle.lower()
-            if where=="Title only": return n in title
-            if where=="Selftext only": return n in body
-            return n in title or n in body
-        if isinstance(node,Term): return present(node.s)
-        if isinstance(node,Not): return not eval_node(node.a,title,body,where)
-        if isinstance(node,And): return eval_node(node.a,title,body,where) and eval_node(node.b,title,body,where)
-        if isinstance(node,Or):  return eval_node(node.a,title,body,where) or  eval_node(node.b,title,body,where)
-        return False
+    def parse_and():
+        nonlocal i
+        node = parse_not()
+        while i < len(tokens) and tokens[i][0] == "AND":
+            i += 1
+            node = And(node, parse_not())
+        return node
 
-    def collect_terms(node,under_not=False):
-        out=set()
-        if isinstance(node,Term):
-            if not under_not and node.s.strip(): out.add(node.s)
-        if isinstance(node,Not): out |= collect_terms(node.a,True)
-        if isinstance(node,And) or isinstance(node,Or):
-            out |= collect_terms(node.a,under_not)
-            out |= collect_terms(node.b,under_not)
-        return out
+    def parse_not():
+        nonlocal i
+        if i < len(tokens) and tokens[i][0] == "NOT":
+            i += 1
+            return Not(parse_not())
+        return parse_atom()
+
+    def parse_atom():
+        nonlocal i
+        if i < len(tokens) and tokens[i][0] == "LPAREN":
+            i += 1
+            node = parse_or()
+            if i >= len(tokens) or tokens[i][0] != "RPAREN":
+                raise ValueError("Unclosed parenthesis")
+            i += 1
+            return node
+        if i < len(tokens) and tokens[i][0] == "TERM":
+            s = tokens[i][1]
+            i += 1
+            return Term(s)
+        raise ValueError("Unexpected token")
+
+    node = parse_or()
+    if i != len(tokens):
+        raise ValueError("Extra tokens")
+    return node
+
+
+def eval_node(node, title, body, where):
+    def present(needle):
+        n = needle.lower()
+        if where == "Title only":
+            return n in title
+        if where == "Selftext only":
+            return n in body
+        return n in title or n in body
+
+    if isinstance(node, Term):
+        return present(node.s)
+    if isinstance(node, Not):
+        return not eval_node(node.a, title, body, where)
+    if isinstance(node, And):
+        return eval_node(node.a, title, body, where) and eval_node(node.b, title, body, where)
+    if isinstance(node, Or):
+        return eval_node(node.a, title, body, where) or eval_node(node.b, title, body, where)
+    return False
+
+
+def collect_terms(node, under_not=False):
+    out = set()
+    if isinstance(node, Term):
+        if not under_not and node.s.strip():
+            out.add(node.s)
+    if isinstance(node, Not):
+        out |= collect_terms(node.a, True)
+    if isinstance(node, And) or isinstance(node, Or):
+        out |= collect_terms(node.a, under_not)
+        out |= collect_terms(node.b, under_not)
+    return out
 
     # --- Runner
     if st.button("🚀 Run Reddit Collector", use_container_width=True):
