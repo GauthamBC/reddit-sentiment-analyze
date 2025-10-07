@@ -82,13 +82,40 @@ with tabs[0]:
         after_ts = int(start_local.astimezone(timezone.utc).timestamp())
         before_ts = int(end_local.astimezone(timezone.utc).timestamp())
 
-    # --- Subreddit options ---
-    subs_mode = st.radio("Subreddits", ["All", "Specific"], horizontal=True)
-    if subs_mode == "Specific":
-        subs_text = st.text_area("Enter subreddits (one per line)", placeholder="SquaredCircle\ngolf")
-        sub_list = [s.strip().lstrip("r/") for s in subs_text.splitlines() if s.strip()]
+    # --- Subreddit pairing or mode selection ---
+    pairing_enabled = st.checkbox("Enable per-query subreddit targeting", value=False)
+
+    if pairing_enabled:
+        st.markdown(
+            "<small>✅ Each query line will target the subreddit on the same line below.<br>"
+            "<b>Example:</b><br><b>Queries:</b><br>stress<br>anxiety<br>"
+            "<b>Subreddits:</b><br>azcardinals<br>falcons</small>",
+            unsafe_allow_html=True
+        )
+        pairing_subs_text = st.text_area(
+            "Enter subreddits (one per line matching each query)",
+            placeholder="azcardinals\nfalcons",
+            height=100
+        )
+        query_lines = [q.strip() for q in queries.splitlines() if q.strip()]
+        sub_lines = [s.strip().lstrip("r/") for s in pairing_subs_text.splitlines() if s.strip()]
+        pairs = [
+            (query_lines[i], sub_lines[i] if i < len(sub_lines) else "all")
+            for i in range(len(query_lines))
+        ]
     else:
-        sub_list = ["all"]
+        subs_mode = st.radio("Subreddits", ["All", "Specific"], horizontal=True)
+        if subs_mode == "Specific":
+            subs_text = st.text_area("Enter subreddits (one per line)", placeholder="SquaredCircle\ngolf")
+            sub_list = [s.strip().lstrip("r/") for s in subs_text.splitlines() if s.strip()]
+        else:
+            sub_list = ["all"]
+
+        pairs = [
+            (q, s)
+            for q in [ln.strip() for ln in queries.splitlines() if ln.strip()]
+            for s in sub_list
+        ]
 
     match_in = st.selectbox("Match in", ["Title + Selftext", "Title only", "Selftext only"])
     per_query_limit = st.number_input("Max posts per query (0 = unlimited)", min_value=0, value=0, step=1)
@@ -128,7 +155,7 @@ with tabs[0]:
         return tokens
 
     class Node: pass
-    class Term(Node):  # leaf term
+    class Term(Node):  
         def __init__(self, s): self.s = s
     class Not(Node):
         def __init__(self, a): self.a = a
@@ -186,54 +213,53 @@ with tabs[0]:
         if not queries.strip():
             st.error("❌ Please enter at least one Boolean query.")
         else:
-            exprs = [ln.strip() for ln in queries.splitlines() if ln.strip()]
             all_rows = []
             progress = st.progress(0)
             status = st.empty()
             done = 0
 
-            for subname in sub_list:
+            for expr, subname in pairs:
                 sub = reddit.subreddit(subname)
                 comment_count = 0
-                for expr in exprs:
-                    try:
-                        ast = parse(tokenize(expr))
-                    except Exception as e:
-                        st.warning(f"⚠️ Invalid query '{expr}': {e}")
-                        continue
-                    try:
-                        posts = sub.search(expr, sort="new", time_filter="week", limit=per_query_limit or None)
-                        for post in posts:
-                            ts = int(getattr(post, "created_utc", 0))
-                            if ts < after_ts or ts > before_ts:
-                                continue
-                            title = (post.title or "").lower()
-                            body = (getattr(post, "selftext", "") or "").lower()
-                            if not eval_node(ast, title, body, match_in):
-                                continue
-                            n_comments = int(getattr(post, "num_comments", 0))
-                            if n_comments < min_comments:
-                                continue
-                            all_rows.append({
-                                "query": expr,
-                                "title": post.title,
-                                "subreddit": str(post.subreddit),
-                                "author": str(post.author) if post.author else "[deleted]",
-                                "created_utc": ts,
-                                "created_utc_iso": datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S %Z"),
-                                "num_comments": n_comments,
-                                "score": int(getattr(post, "score", 0)),
-                                "url": f"https://www.reddit.com{post.permalink}"
-                            })
-                            comment_count += n_comments
-                            if comment_count >= max_comments_per_sub:
-                                st.info(f"🧱 Reached comment cap for r/{subname} ({comment_count} comments).")
-                                break
-                    except Exception as e:
-                        st.warning(f"⚠️ Skipped r/{subname} due to: {e}")
-                    done += 1
-                    progress.progress(min(int(done / (len(sub_list) * len(exprs)) * 100), 100))
-                    status.text(f"Processed {done}/{len(sub_list) * len(exprs)} queries")
+                try:
+                    ast = parse(tokenize(expr))
+                except Exception as e:
+                    st.warning(f"⚠️ Invalid query '{expr}': {e}")
+                    continue
+                try:
+                    posts = sub.search(expr, sort="new", time_filter="week", limit=per_query_limit or None)
+                    for post in posts:
+                        ts = int(getattr(post, "created_utc", 0))
+                        if ts < after_ts or ts > before_ts:
+                            continue
+                        title = (post.title or "").lower()
+                        body = (getattr(post, "selftext", "") or "").lower()
+                        if not eval_node(ast, title, body, match_in):
+                            continue
+                        n_comments = int(getattr(post, "num_comments", 0))
+                        if n_comments < min_comments:
+                            continue
+                        all_rows.append({
+                            "query": expr,
+                            "title": post.title,
+                            "subreddit": str(post.subreddit),
+                            "author": str(post.author) if post.author else "[deleted]",
+                            "created_utc": ts,
+                            "created_utc_iso": datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S %Z"),
+                            "num_comments": n_comments,
+                            "score": int(getattr(post, "score", 0)),
+                            "url": f"https://www.reddit.com{post.permalink}"
+                        })
+                        comment_count += n_comments
+                        if comment_count >= max_comments_per_sub:
+                            st.info(f"🧱 Reached comment cap for r/{subname} ({comment_count} comments).")
+                            break
+                except Exception as e:
+                    st.warning(f"⚠️ Skipped r/{subname} due to: {e}")
+
+                done += 1
+                progress.progress(min(int(done / len(pairs) * 100), 100))
+                status.text(f"Processed {done}/{len(pairs)} queries")
 
             if not all_rows:
                 st.warning("⚠️ No matching posts found.")
@@ -270,7 +296,6 @@ with tabs[0]:
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=True
                 )
-
 # ==============================
 # Tab 2: Comment Scraper
 # ==============================
