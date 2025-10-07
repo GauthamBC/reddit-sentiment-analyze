@@ -53,18 +53,15 @@ reddit = praw.Reddit(
     user_agent=USER_AGENT,
     ratelimit_seconds=5
 )
-reddit.read_only = True  
+reddit.read_only = True
+
 with tabs[0]:
     st.subheader("🔗 Reddit URL Collector — Cloud Safe Version")
 
-    # --- Input: Boolean queries ---
-    queries = st.text_area(
-        "Enter Boolean queries (one per line)",
-        placeholder='Example:\n("Rory McIlroy" AND "Ryder Cup") OR "Bethpage"',
-        height=120
-    )
-
-    # --- Time range selection ---
+    # --- Inputs
+    queries = st.text_area("Enter Boolean queries (one per line)",
+                           placeholder='("Rory McIlroy" AND "Ryder Cup") OR "Bethpage"',
+                           height=120)
     time_mode = st.radio("Time range", ["Last N hours", "Last N days", "Custom dates"], horizontal=True)
     if time_mode == "Last N hours":
         hours = st.slider("Hours:", 1, 48, 24)
@@ -78,24 +75,18 @@ with tabs[0]:
         from_date = st.date_input("From date", value=date.today() - timedelta(days=1))
         to_date = st.date_input("To date", value=date.today())
         start_local = dtparse.parse(f"{from_date.isoformat()} 00:00").astimezone()
-        end_local = dtparse.parse(f"{to_date.isoformat()} 23:59").astimezone()
+        end_local   = dtparse.parse(f"{to_date.isoformat()} 23:59").astimezone()
         after_ts = int(start_local.astimezone(timezone.utc).timestamp())
         before_ts = int(end_local.astimezone(timezone.utc).timestamp())
 
-    # --- Subreddit pairing toggle ---
     pairing_enabled = st.checkbox("Enable per-query subreddit targeting", value=False)
-
     if pairing_enabled:
         st.markdown(
             "<small>✅ Each query line targets the subreddit on the same line below.<br>"
             "Example: first query → first subreddit.</small>",
             unsafe_allow_html=True
         )
-        pairing_subs_text = st.text_area(
-            "Enter subreddits (one per line matching each query)",
-            placeholder="azcardinals\nfalcons",
-            height=100
-        )
+        pairing_subs_text = st.text_area("Enter subreddits (one per line)", placeholder="azcardinals\nfalcons", height=100)
     else:
         subs_mode = st.radio("Subreddits", ["All", "Specific"], horizontal=True)
         if subs_mode == "Specific":
@@ -105,231 +96,173 @@ with tabs[0]:
             sub_list = ["all"]
 
     match_in = st.selectbox("Match in", ["Title + Selftext", "Title only", "Selftext only"])
-    per_query_limit = st.number_input("Max posts per query (0 = unlimited)", min_value=0, value=0, step=1)
+    per_query_limit = st.number_input("Max posts per query (0 = unlimited)", min_value=0, value=0)
     min_comments = st.number_input("Minimum comments per post", min_value=0, value=0)
     max_comments_per_sub = st.number_input("Stop after N total comments per subreddit", min_value=100, value=2000)
+    global_comment_cap = st.number_input("Global comment cap (0 = unlimited)", min_value=0, value=0)
 
-    # --- Boolean parser helpers ---
-    TOKEN_RE = re.compile(r'''
-        ("[^"\\]*(?:\\.[^"\\]*)*")
-      | (\() | (\))
-      | (?:\bAND\b|&&|&)
-      | (?:\bOR\b|\|\||\|)
-      | (?:\bNOT\b|!|-)
-      | ([^\s()]+)
-    ''', re.IGNORECASE | re.VERBOSE)
+    # --- Helper functions (tokenizer + parser + evaluator)
+    TOKEN_RE = re.compile(r'(".*?"|\(|\)|\bAND\b|\bOR\b|\bNOT\b|&&|\|\||!|-|[^\s()]+)', re.IGNORECASE)
 
-    def tokenize(expr: str):
-        tokens = []
+    class Node: pass
+    class Term(Node):  def __init__(self, s): self.s = s
+    class Not(Node):   def __init__(self, a): self.a = a
+    class And(Node):   def __init__(self, a, b): self.a, self.b = a, b
+    class Or(Node):    def __init__(self, a, b): self.a, self.b = a, b
+
+    def tokenize(expr):
+        tokens=[]
         for m in TOKEN_RE.finditer(expr):
-            if m.group(1):
-                tokens.append(("TERM", m.group(1)[1:-1]))
-            elif m.group(2):
-                tokens.append(("LPAREN", "("))
-            elif m.group(3):
-                tokens.append(("RPAREN", ")"))
-            else:
-                t = m.group(0).strip()
-                u = t.upper()
-                if u in ("AND", "&&", "&"):
-                    tokens.append(("AND", "AND"))
-                elif u in ("OR", "||", "|"):
-                    tokens.append(("OR", "OR"))
-                elif u in ("NOT", "!", "-"):
-                    tokens.append(("NOT", "NOT"))
-                else:
-                    tokens.append(("TERM", t))
+            t=m.group(0).strip(); u=t.upper()
+            if u in ("AND","&&","&"): tokens.append(("AND","AND"))
+            elif u in ("OR","||","|"): tokens.append(("OR","OR"))
+            elif u in ("NOT","!","-"): tokens.append(("NOT","NOT"))
+            elif t=="(": tokens.append(("LPAREN","("))
+            elif t==")": tokens.append(("RPAREN",")"))
+            else: tokens.append(("TERM",t.strip('"')))
         return tokens
 
-    # --- Boolean AST nodes ---
-    class Node:
-        pass
-
-    class Term(Node):
-        def __init__(self, s):
-            self.s = s
-
-    class Not(Node):
-        def __init__(self, a):
-            self.a = a
-
-    class And(Node):
-        def __init__(self, a, b):
-            self.a = a
-            self.b = b
-
-    class Or(Node):
-        def __init__(self, a, b):
-            self.a = a
-            self.b = b
-
-    # --- Boolean parser ---
     def parse(tokens):
-        i = 0
-
+        i=0
         def parse_or():
-            nonlocal i
-            node = parse_and()
-            while i < len(tokens) and tokens[i][0] == "OR":
-                i += 1
-                node = Or(node, parse_and())
+            nonlocal i; node=parse_and()
+            while i<len(tokens) and tokens[i][0]=="OR": i+=1; node=Or(node,parse_and())
             return node
-
         def parse_and():
-            nonlocal i
-            node = parse_not()
-            while i < len(tokens) and tokens[i][0] == "AND":
-                i += 1
-                node = And(node, parse_not())
+            nonlocal i; node=parse_not()
+            while i<len(tokens) and tokens[i][0]=="AND": i+=1; node=And(node,parse_not())
             return node
-
         def parse_not():
             nonlocal i
-            if i < len(tokens) and tokens[i][0] == "NOT":
-                i += 1
-                return Not(parse_not())
+            if i<len(tokens) and tokens[i][0]=="NOT": i+=1; return Not(parse_not())
             return parse_atom()
-
         def parse_atom():
             nonlocal i
-            if i < len(tokens) and tokens[i][0] == "LPAREN":
-                i += 1
-                node = parse_or()
-                if i >= len(tokens) or tokens[i][0] != "RPAREN":
-                    raise ValueError("Unclosed parenthesis")
-                i += 1
-                return node
-            if i < len(tokens) and tokens[i][0] == "TERM":
-                s = tokens[i][1]
-                i += 1
-                return Term(s)
+            if i<len(tokens) and tokens[i][0]=="LPAREN":
+                i+=1; node=parse_or()
+                if i>=len(tokens) or tokens[i][0]!="RPAREN": raise ValueError("Unclosed parenthesis")
+                i+=1; return node
+            if i<len(tokens) and tokens[i][0]=="TERM": s=tokens[i][1]; i+=1; return Term(s)
             raise ValueError("Unexpected token")
-
-        node = parse_or()
-        if i != len(tokens):
-            raise ValueError("Extra tokens")
+        node=parse_or()
+        if i!=len(tokens): raise ValueError("Extra tokens")
         return node
 
-    # --- Boolean evaluator ---
-    def eval_node(node, title: str, body: str, where: str):
+    def eval_node(node, title, body, where):
         def present(needle):
-            n = needle.lower()
-            if where == "Title only":
-                return n in title
-            if where == "Selftext only":
-                return n in body
-            return (n in title) or (n in body)
-
-        if isinstance(node, Term):
-            return present(node.s)
-        if isinstance(node, Not):
-            return not eval_node(node.a, title, body, where)
-        if isinstance(node, And):
-            return eval_node(node.a, title, body, where) and eval_node(node.b, title, body, where)
-        if isinstance(node, Or):
-            return eval_node(node.a, title, body, where) or eval_node(node.b, title, body, where)
+            n=needle.lower()
+            if where=="Title only": return n in title
+            if where=="Selftext only": return n in body
+            return n in title or n in body
+        if isinstance(node,Term): return present(node.s)
+        if isinstance(node,Not): return not eval_node(node.a,title,body,where)
+        if isinstance(node,And): return eval_node(node.a,title,body,where) and eval_node(node.b,title,body,where)
+        if isinstance(node,Or):  return eval_node(node.a,title,body,where) or  eval_node(node.b,title,body,where)
         return False
 
-    # --- Run Collector ---
+    # --- Scraper runner
     if st.button("🚀 Run Reddit Collector", use_container_width=True):
         if not queries.strip():
             st.error("❌ Please enter at least one Boolean query.")
         else:
-            query_lines = [q.strip() for q in queries.splitlines() if q.strip()]
+            query_lines=[q.strip() for q in queries.splitlines() if q.strip()]
             if pairing_enabled:
-                sub_lines = [s.strip().lstrip("r/") for s in pairing_subs_text.splitlines() if s.strip()]
-                pairs = [(query_lines[i], sub_lines[i] if i < len(sub_lines) else "all") for i in range(len(query_lines))]
+                sub_lines=[s.strip().lstrip("r/") for s in pairing_subs_text.splitlines() if s.strip()]
+                pairs=[(query_lines[i], sub_lines[i] if i<len(sub_lines) else "all") for i in range(len(query_lines))]
             else:
-                pairs = [(q, s) for q in query_lines for s in sub_list]
+                pairs=[(q, s) for q in query_lines for s in sub_list]
 
-            all_rows, done = [], 0
-            progress = st.progress(0)
-            status = st.empty()
+            all_rows=[]; total_comments=0; per_sub_comments={}
+            progress=st.progress(0); status=st.empty()
+            start_time=time.time()
 
-            for expr, subname in pairs:
-                sub = reddit.subreddit(subname)
-                comment_count = 0
+            for idx,(expr,subname) in enumerate(pairs):
                 try:
-                    ast = parse(tokenize(expr))
+                    sub=reddit.subreddit(subname)
+                    ast=parse(tokenize(expr))
                 except Exception as e:
-                    st.warning(f"⚠️ Invalid query '{expr}': {e}")
+                    st.warning(f"⚠️ Skipping invalid query or subreddit ({expr}, r/{subname}): {e}")
                     continue
 
+                sub_rows=[]; comment_sum=0
                 try:
-                    posts = sub.search(expr, sort="new", time_filter="week", limit=per_query_limit or None)
-                    for post in posts:
-                        ts = int(getattr(post, "created_utc", 0))
-                        if ts < after_ts or ts > before_ts:
-                            continue
+                    posts=sub.search(expr, sort="new", time_filter="week",
+                                     limit=per_query_limit or None)
+                    for p in posts:
+                        ts=int(getattr(p,"created_utc",0))
+                        if ts<after_ts or ts>before_ts: continue
+                        title=(p.title or "").lower()
+                        body=(getattr(p,"selftext","") or "").lower()
+                        if not eval_node(ast,title,body,match_in): continue
+                        n_comments=int(getattr(p,"num_comments",0))
+                        if n_comments<min_comments: continue
 
-                        title = (post.title or "").lower()
-                        body = (getattr(post, "selftext", "") or "").lower()
-                        if not eval_node(ast, title, body, match_in):
-                            continue
-
-                        n_comments = int(getattr(post, "num_comments", 0))
-                        if n_comments < min_comments:
-                            continue
-
-                        all_rows.append({
-                            "query": expr,
-                            "title": post.title,
-                            "subreddit": str(post.subreddit),
-                            "author": str(post.author) if post.author else "[deleted]",
-                            "created_utc": ts,
-                            "created_utc_iso": datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S %Z"),
-                            "num_comments": n_comments,
-                            "score": int(getattr(post, "score", 0)),
-                            "url": f"https://www.reddit.com{post.permalink}"
+                        sub_rows.append({
+                            "query":expr,"title":p.title,"subreddit":str(p.subreddit),
+                            "author":str(p.author) if p.author else "[deleted]",
+                            "created_utc":ts,
+                            "created_utc_iso":datetime.fromtimestamp(ts,tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S %Z"),
+                            "num_comments":n_comments,"score":int(getattr(p,"score",0)),
+                            "url":f"https://www.reddit.com{p.permalink}"
                         })
-
-                        comment_count += n_comments
-                        if comment_count >= max_comments_per_sub:
-                            st.info(f"🧱 Reached comment cap for r/{subname} ({comment_count} comments).")
-                            break
+                        comment_sum+=n_comments; total_comments+=n_comments
+                        if max_comments_per_sub and comment_sum>=max_comments_per_sub:
+                            st.info(f"🧱 Cap reached for r/{subname} ({comment_sum} comments)."); break
+                        if global_comment_cap and total_comments>=global_comment_cap:
+                            st.info(f"⛔ Global cap reached ({total_comments})."); break
+                        time.sleep(0.4+0.3*(idx%3))  # light randomisation
                 except Exception as e:
-                    st.warning(f"⚠️ Skipped r/{subname} due to: {e}")
+                    st.warning(f"⚠️ Skipped r/{subname}: {e}")
+                all_rows.extend(sub_rows)
+                per_sub_comments[subname]=per_sub_comments.get(subname,0)+comment_sum
+                percent=int(((idx+1)/len(pairs))*100)
+                progress.progress(percent)
+                status.text(f"Processed {idx+1}/{len(pairs)} | "
+                            f"r/{subname}: {comment_sum} comments | "
+                            f"Total: {total_comments}")
 
-                done += 1
-                progress.progress(min(int(done / len(pairs) * 100), 100))
-                status.text(f"Processed {done}/{len(pairs)} query–subreddit pairs")
+                if global_comment_cap and total_comments>=global_comment_cap: break
 
-            # --- Results ---
             if not all_rows:
                 st.warning("⚠️ No matching posts found.")
             else:
-                df = pd.DataFrame(all_rows).drop_duplicates(subset=["url"]).sort_values(
-                    ["created_utc", "subreddit"], ascending=[False, True]
+                df=pd.DataFrame(all_rows).drop_duplicates(subset=["url"]).sort_values(
+                    ["created_utc","subreddit"],ascending=[False,True])
+                sub_summary=(df.groupby("subreddit",as_index=False)
+                             .agg(threads=("url","count"),
+                                  comments=("num_comments","sum"))
+                             .sort_values(["comments","threads"],ascending=[False,False]))
+                sub_summary["avg_comments"]=(
+                    df.groupby("subreddit")["num_comments"].mean().round(1).values
                 )
-                sub_summary = df.groupby("subreddit", as_index=False).agg(
-                    threads=("url", "count"),
-                    comments=("num_comments", "sum")
-                ).sort_values(["comments", "threads"], ascending=[False, False])
+
+                st.session_state.last_df=df
+                st.session_state.last_summary=sub_summary
 
                 st.markdown(
-                    f"**Summary:** {len(df)} posts scraped, {df['num_comments'].sum()} total comments, "
-                    f"across {df['subreddit'].nunique()} subreddits."
+                    f"✅ **Done in {time.time()-start_time:.1f}s**<br>"
+                    f"**{len(df)} posts**, {df['num_comments'].sum()} comments across "
+                    f"{df['subreddit'].nunique()} subreddits.",
+                    unsafe_allow_html=True
                 )
+                tab1,tab2=st.tabs(["📄 Full Results","📊 Frequency Table"])
+                with tab1: st.dataframe(df,use_container_width=True)
+                with tab2: st.dataframe(sub_summary,use_container_width=True)
 
-                tab1, tab2 = st.tabs(["📄 Full Results", "📊 Frequency Table"])
-                with tab1:
-                    st.dataframe(df.reset_index(drop=True), use_container_width=True)
-                with tab2:
-                    st.dataframe(sub_summary.reset_index(drop=True), use_container_width=True)
-
-                # --- Excel download ---
-                output = io.BytesIO()
-                with pd.ExcelWriter(output, engine="openpyxl") as writer:
-                    df.to_excel(writer, sheet_name="Full Results", index=False)
-                    sub_summary.to_excel(writer, sheet_name="Frequency Table", index=False)
-                output.seek(0)
-                st.download_button(
-                    "⬇️ Download Excel",
-                    data=output,
-                    file_name="reddit_results.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True
-                )
+    # --- Download existing results (no re-run)
+    if "last_df" in st.session_state:
+        df=st.session_state.last_df
+        sub_summary=st.session_state.last_summary
+        output=io.BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            df.to_excel(writer, sheet_name="Full Results", index=False)
+            sub_summary.to_excel(writer, sheet_name="Frequency Table", index=False)
+        output.seek(0)
+        st.download_button("⬇️ Download Last Results",
+                           data=output,
+                           file_name="reddit_results.xlsx",
+                           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                           use_container_width=True)
 # ==============================
 # Tab 2: Comment Scraper
 # ==============================
