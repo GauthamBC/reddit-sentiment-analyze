@@ -221,6 +221,7 @@ with tabs[0]:
             status = st.empty()
             done = 0
 
+            # ✅ Loop over each (query, subreddit) pair correctly
             for expr, subname in pairs:
                 sub = reddit.subreddit(subname)
                 comment_count = 0
@@ -229,19 +230,23 @@ with tabs[0]:
                 except Exception as e:
                     st.warning(f"⚠️ Invalid query '{expr}': {e}")
                     continue
+
                 try:
                     posts = sub.search(expr, sort="new", time_filter="week", limit=per_query_limit or None)
                     for post in posts:
                         ts = int(getattr(post, "created_utc", 0))
                         if ts < after_ts or ts > before_ts:
                             continue
+
                         title = (post.title or "").lower()
                         body = (getattr(post, "selftext", "") or "").lower()
                         if not eval_node(ast, title, body, match_in):
                             continue
+
                         n_comments = int(getattr(post, "num_comments", 0))
                         if n_comments < min_comments:
                             continue
+
                         all_rows.append({
                             "query": expr,
                             "title": post.title,
@@ -253,6 +258,7 @@ with tabs[0]:
                             "score": int(getattr(post, "score", 0)),
                             "url": f"https://www.reddit.com{post.permalink}"
                         })
+
                         comment_count += n_comments
                         if comment_count >= max_comments_per_sub:
                             st.info(f"🧱 Reached comment cap for r/{subname} ({comment_count} comments).")
@@ -262,8 +268,7 @@ with tabs[0]:
 
                 done += 1
                 progress.progress(min(int(done / len(pairs) * 100), 100))
-                status.text(f"Processed {done}/{len(pairs)} queries")
-
+                status.text(f"Processed {done}/{len(pairs)} query–subreddit pairs")
             if not all_rows:
                 st.warning("⚠️ No matching posts found.")
             else:
