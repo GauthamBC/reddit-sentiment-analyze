@@ -82,14 +82,13 @@ with tabs[0]:
         after_ts = int(start_local.astimezone(timezone.utc).timestamp())
         before_ts = int(end_local.astimezone(timezone.utc).timestamp())
 
-    # --- Subreddit pairing or mode selection ---
+    # --- Subreddit pairing toggle ---
     pairing_enabled = st.checkbox("Enable per-query subreddit targeting", value=False)
 
     if pairing_enabled:
         st.markdown(
-            "<small>✅ Each query line will target the subreddit on the same line below.<br>"
-            "For example, if your first query is about <b>stress</b> and your first subreddit line is <b>azcardinals</b>, "
-            "that query will only search in <b>r/azcardinals</b>.</small>",
+            "<small>✅ Each query line targets the subreddit on the same line below.<br>"
+            "Example: first query → first subreddit.</small>",
             unsafe_allow_html=True
         )
         pairing_subs_text = st.text_area(
@@ -110,7 +109,7 @@ with tabs[0]:
     min_comments = st.number_input("Minimum comments per post", min_value=0, value=0)
     max_comments_per_sub = st.number_input("Stop after N total comments per subreddit", min_value=100, value=2000)
 
-    # --- Boolean parsing helpers ---
+    # --- Boolean parser helpers ---
     TOKEN_RE = re.compile(r'''
         ("[^"\\]*(?:\\.[^"\\]*)*")
       | (\() | (\))
@@ -123,85 +122,112 @@ with tabs[0]:
     def tokenize(expr: str):
         tokens = []
         for m in TOKEN_RE.finditer(expr):
-            if m.group(1): tokens.append(("TERM", m.group(1)[1:-1]))
-            elif m.group(2): tokens.append(("LPAREN", "("))
-            elif m.group(3): tokens.append(("RPAREN", ")"))
+            if m.group(1):
+                tokens.append(("TERM", m.group(1)[1:-1]))
+            elif m.group(2):
+                tokens.append(("LPAREN", "("))
+            elif m.group(3):
+                tokens.append(("RPAREN", ")"))
             else:
                 t = m.group(0).strip()
                 u = t.upper()
-                if u in ("AND", "&&", "&"): tokens.append(("AND", "AND"))
-                elif u in ("OR", "||", "|"): tokens.append(("OR", "OR"))
-                elif u in ("NOT", "!", "-"): tokens.append(("NOT", "NOT"))
-                else: tokens.append(("TERM", t))
+                if u in ("AND", "&&", "&"):
+                    tokens.append(("AND", "AND"))
+                elif u in ("OR", "||", "|"):
+                    tokens.append(("OR", "OR"))
+                elif u in ("NOT", "!", "-"):
+                    tokens.append(("NOT", "NOT"))
+                else:
+                    tokens.append(("TERM", t))
         return tokens
 
+    # --- Boolean AST nodes ---
     class Node:
-    pass
+        pass
 
+    class Term(Node):
+        def __init__(self, s):
+            self.s = s
 
-class Term(Node):
-    def __init__(self, s):
-        self.s = s
+    class Not(Node):
+        def __init__(self, a):
+            self.a = a
 
+    class And(Node):
+        def __init__(self, a, b):
+            self.a = a
+            self.b = b
 
-class Not(Node):
-    def __init__(self, a):
-        self.a = a
+    class Or(Node):
+        def __init__(self, a, b):
+            self.a = a
+            self.b = b
 
-
-class And(Node):
-    def __init__(self, a, b):
-        self.a = a
-        self.b = b
-
-
-class Or(Node):
-    def __init__(self, a, b):
-        self.a = a
-        self.b = b
-
+    # --- Boolean parser ---
     def parse(tokens):
         i = 0
+
         def parse_or():
             nonlocal i
             node = parse_and()
             while i < len(tokens) and tokens[i][0] == "OR":
-                i += 1; node = Or(node, parse_and())
+                i += 1
+                node = Or(node, parse_and())
             return node
+
         def parse_and():
             nonlocal i
             node = parse_not()
             while i < len(tokens) and tokens[i][0] == "AND":
-                i += 1; node = And(node, parse_not())
+                i += 1
+                node = And(node, parse_not())
             return node
+
         def parse_not():
             nonlocal i
             if i < len(tokens) and tokens[i][0] == "NOT":
-                i += 1; return Not(parse_not())
+                i += 1
+                return Not(parse_not())
             return parse_atom()
+
         def parse_atom():
             nonlocal i
             if i < len(tokens) and tokens[i][0] == "LPAREN":
-                i += 1; node = parse_or()
-                if i >= len(tokens) or tokens[i][0] != "RPAREN": raise ValueError("Unclosed parenthesis")
-                i += 1; return node
+                i += 1
+                node = parse_or()
+                if i >= len(tokens) or tokens[i][0] != "RPAREN":
+                    raise ValueError("Unclosed parenthesis")
+                i += 1
+                return node
             if i < len(tokens) and tokens[i][0] == "TERM":
-                s = tokens[i][1]; i += 1; return Term(s)
+                s = tokens[i][1]
+                i += 1
+                return Term(s)
             raise ValueError("Unexpected token")
+
         node = parse_or()
-        if i != len(tokens): raise ValueError("Extra tokens")
+        if i != len(tokens):
+            raise ValueError("Extra tokens")
         return node
 
+    # --- Boolean evaluator ---
     def eval_node(node, title: str, body: str, where: str):
         def present(needle):
             n = needle.lower()
-            if where == "Title only": return n in title
-            if where == "Selftext only": return n in body
+            if where == "Title only":
+                return n in title
+            if where == "Selftext only":
+                return n in body
             return (n in title) or (n in body)
-        if isinstance(node, Term): return present(node.s)
-        if isinstance(node, Not): return not eval_node(node.a, title, body, where)
-        if isinstance(node, And): return eval_node(node.a, title, body, where) and eval_node(node.b, title, body, where)
-        if isinstance(node, Or):  return eval_node(node.a, title, body, where) or eval_node(node.b, title, body, where)
+
+        if isinstance(node, Term):
+            return present(node.s)
+        if isinstance(node, Not):
+            return not eval_node(node.a, title, body, where)
+        if isinstance(node, And):
+            return eval_node(node.a, title, body, where) and eval_node(node.b, title, body, where)
+        if isinstance(node, Or):
+            return eval_node(node.a, title, body, where) or eval_node(node.b, title, body, where)
         return False
 
     # --- Run Collector ---
@@ -212,16 +238,9 @@ class Or(Node):
             query_lines = [q.strip() for q in queries.splitlines() if q.strip()]
             if pairing_enabled:
                 sub_lines = [s.strip().lstrip("r/") for s in pairing_subs_text.splitlines() if s.strip()]
-                pairs = [
-                    (query_lines[i], sub_lines[i] if i < len(sub_lines) else "all")
-                    for i in range(len(query_lines))
-                ]
+                pairs = [(query_lines[i], sub_lines[i] if i < len(sub_lines) else "all") for i in range(len(query_lines))]
             else:
-                pairs = [
-                    (q, s)
-                    for q in query_lines
-                    for s in sub_list
-                ]
+                pairs = [(q, s) for q in query_lines for s in sub_list]
 
             all_rows, done = [], 0
             progress = st.progress(0)
@@ -240,14 +259,17 @@ class Or(Node):
                     posts = sub.search(expr, sort="new", time_filter="week", limit=per_query_limit or None)
                     for post in posts:
                         ts = int(getattr(post, "created_utc", 0))
-                        if ts < after_ts or ts > before_ts: continue
+                        if ts < after_ts or ts > before_ts:
+                            continue
 
                         title = (post.title or "").lower()
-                        body  = (getattr(post, "selftext", "") or "").lower()
-                        if not eval_node(ast, title, body, match_in): continue
+                        body = (getattr(post, "selftext", "") or "").lower()
+                        if not eval_node(ast, title, body, match_in):
+                            continue
 
                         n_comments = int(getattr(post, "num_comments", 0))
-                        if n_comments < min_comments: continue
+                        if n_comments < min_comments:
+                            continue
 
                         all_rows.append({
                             "query": expr,
@@ -290,8 +312,10 @@ class Or(Node):
                 )
 
                 tab1, tab2 = st.tabs(["📄 Full Results", "📊 Frequency Table"])
-                with tab1: st.dataframe(df.reset_index(drop=True), use_container_width=True)
-                with tab2: st.dataframe(sub_summary.reset_index(drop=True), use_container_width=True)
+                with tab1:
+                    st.dataframe(df.reset_index(drop=True), use_container_width=True)
+                with tab2:
+                    st.dataframe(sub_summary.reset_index(drop=True), use_container_width=True)
 
                 # --- Excel download ---
                 output = io.BytesIO()
