@@ -81,6 +81,7 @@ with tabs[0]:
         end_local = dtparse.parse(f"{to_date.isoformat()} 23:59").astimezone()
         after_ts = int(start_local.astimezone(timezone.utc).timestamp())
         before_ts = int(end_local.astimezone(timezone.utc).timestamp())
+
     # --- Subreddit pairing or mode selection ---
     pairing_enabled = st.checkbox("Enable per-query subreddit targeting", value=False)
 
@@ -91,20 +92,11 @@ with tabs[0]:
             "that query will only search in <b>r/azcardinals</b>.</small>",
             unsafe_allow_html=True
         )
-
         pairing_subs_text = st.text_area(
             "Enter subreddits (one per line matching each query)",
             placeholder="azcardinals\nfalcons",
             height=100
         )
-
-        query_lines = [q.strip() for q in queries.splitlines() if q.strip()]
-        sub_lines = [s.strip().lstrip("r/") for s in pairing_subs_text.splitlines() if s.strip()]
-        pairs = [
-            (query_lines[i], sub_lines[i] if i < len(sub_lines) else "all")
-            for i in range(len(query_lines))
-        ]
-
     else:
         subs_mode = st.radio("Subreddits", ["All", "Specific"], horizontal=True)
         if subs_mode == "Specific":
@@ -112,13 +104,6 @@ with tabs[0]:
             sub_list = [s.strip().lstrip("r/") for s in subs_text.splitlines() if s.strip()]
         else:
             sub_list = ["all"]
-
-        pairs = [
-            (q, s)
-            for q in [ln.strip() for ln in queries.splitlines() if ln.strip()]
-            for s in sub_list
-        ]
-   
 
     match_in = st.selectbox("Match in", ["Title + Selftext", "Title only", "Selftext only"])
     per_query_limit = st.number_input("Max posts per query (0 = unlimited)", min_value=0, value=0, step=1)
@@ -138,34 +123,23 @@ with tabs[0]:
     def tokenize(expr: str):
         tokens = []
         for m in TOKEN_RE.finditer(expr):
-            if m.group(1):
-                tokens.append(("TERM", m.group(1)[1:-1]))
-            elif m.group(2):
-                tokens.append(("LPAREN", "("))
-            elif m.group(3):
-                tokens.append(("RPAREN", ")"))
+            if m.group(1): tokens.append(("TERM", m.group(1)[1:-1]))
+            elif m.group(2): tokens.append(("LPAREN", "("))
+            elif m.group(3): tokens.append(("RPAREN", ")"))
             else:
                 t = m.group(0).strip()
                 u = t.upper()
-                if u in ("AND", "&&", "&"):
-                    tokens.append(("AND", "AND"))
-                elif u in ("OR", "||", "|"):
-                    tokens.append(("OR", "OR"))
-                elif u in ("NOT", "!", "-"):
-                    tokens.append(("NOT", "NOT"))
-                else:
-                    tokens.append(("TERM", t))
+                if u in ("AND", "&&", "&"): tokens.append(("AND", "AND"))
+                elif u in ("OR", "||", "|"): tokens.append(("OR", "OR"))
+                elif u in ("NOT", "!", "-"): tokens.append(("NOT", "NOT"))
+                else: tokens.append(("TERM", t))
         return tokens
 
     class Node: pass
-    class Term(Node):  
-        def __init__(self, s): self.s = s
-    class Not(Node):
-        def __init__(self, a): self.a = a
-    class And(Node):
-        def __init__(self, a, b): self.a = a; self.b = b
-    class Or(Node):
-        def __init__(self, a, b): self.a = a; self.b = b
+    class Term(Node):  def __init__(self, s): self.s = s
+    class Not(Node):   def __init__(self, a): self.a = a
+    class And(Node):   def __init__(self, a, b): self.a = a; self.b = b
+    class Or(Node):    def __init__(self, a, b): self.a = a; self.b = b
 
     def parse(tokens):
         i = 0
@@ -208,7 +182,7 @@ with tabs[0]:
         if isinstance(node, Term): return present(node.s)
         if isinstance(node, Not): return not eval_node(node.a, title, body, where)
         if isinstance(node, And): return eval_node(node.a, title, body, where) and eval_node(node.b, title, body, where)
-        if isinstance(node, Or): return eval_node(node.a, title, body, where) or eval_node(node.b, title, body, where)
+        if isinstance(node, Or):  return eval_node(node.a, title, body, where) or eval_node(node.b, title, body, where)
         return False
 
     # --- Run Collector ---
@@ -216,12 +190,24 @@ with tabs[0]:
         if not queries.strip():
             st.error("❌ Please enter at least one Boolean query.")
         else:
-            all_rows = []
+            query_lines = [q.strip() for q in queries.splitlines() if q.strip()]
+            if pairing_enabled:
+                sub_lines = [s.strip().lstrip("r/") for s in pairing_subs_text.splitlines() if s.strip()]
+                pairs = [
+                    (query_lines[i], sub_lines[i] if i < len(sub_lines) else "all")
+                    for i in range(len(query_lines))
+                ]
+            else:
+                pairs = [
+                    (q, s)
+                    for q in query_lines
+                    for s in sub_list
+                ]
+
+            all_rows, done = [], 0
             progress = st.progress(0)
             status = st.empty()
-            done = 0
 
-            # ✅ Loop over each (query, subreddit) pair correctly
             for expr, subname in pairs:
                 sub = reddit.subreddit(subname)
                 comment_count = 0
@@ -235,17 +221,14 @@ with tabs[0]:
                     posts = sub.search(expr, sort="new", time_filter="week", limit=per_query_limit or None)
                     for post in posts:
                         ts = int(getattr(post, "created_utc", 0))
-                        if ts < after_ts or ts > before_ts:
-                            continue
+                        if ts < after_ts or ts > before_ts: continue
 
                         title = (post.title or "").lower()
-                        body = (getattr(post, "selftext", "") or "").lower()
-                        if not eval_node(ast, title, body, match_in):
-                            continue
+                        body  = (getattr(post, "selftext", "") or "").lower()
+                        if not eval_node(ast, title, body, match_in): continue
 
                         n_comments = int(getattr(post, "num_comments", 0))
-                        if n_comments < min_comments:
-                            continue
+                        if n_comments < min_comments: continue
 
                         all_rows.append({
                             "query": expr,
@@ -269,6 +252,8 @@ with tabs[0]:
                 done += 1
                 progress.progress(min(int(done / len(pairs) * 100), 100))
                 status.text(f"Processed {done}/{len(pairs)} query–subreddit pairs")
+
+            # --- Results ---
             if not all_rows:
                 st.warning("⚠️ No matching posts found.")
             else:
@@ -286,10 +271,8 @@ with tabs[0]:
                 )
 
                 tab1, tab2 = st.tabs(["📄 Full Results", "📊 Frequency Table"])
-                with tab1:
-                    st.dataframe(df.reset_index(drop=True), use_container_width=True)
-                with tab2:
-                    st.dataframe(sub_summary.reset_index(drop=True), use_container_width=True)
+                with tab1: st.dataframe(df.reset_index(drop=True), use_container_width=True)
+                with tab2: st.dataframe(sub_summary.reset_index(drop=True), use_container_width=True)
 
                 # --- Excel download ---
                 output = io.BytesIO()
