@@ -402,6 +402,8 @@ with tabs[0]:
 # ==============================
 # Tab 2: Comment Scraper
 # ==============================
+import requests
+
 with tabs[1]:
     st.subheader("💬 Comment Scraper")
 
@@ -409,10 +411,10 @@ with tabs[1]:
         "URLs:",
         placeholder="Paste Reddit URLs, one per line",
         height=180,
-        help="Each line should be a full Reddit thread URL, e.g. https://www.reddit.com/r/eagles/comments/abcd12/title_here/"
+        help="Each line should be a full Reddit thread URL, e.g. https://www.reddit.com/r/49ers/comments/abcd12/title/"
     )
 
-    # 👇 User sets max comments per URL
+    # user sets comment cap
     max_comments_per_url = st.number_input(
         "Max comments to scrape per URL",
         min_value=10,
@@ -422,15 +424,9 @@ with tabs[1]:
         help="Limit how many comments to collect from each Reddit post"
     )
 
-    # --- Helper to extract submission ID from URL
-    import re
     def extract_submission_id(url: str):
-        """
-        Extract the Reddit submission ID from a post URL.
-        Works for any standard Reddit link with /comments/<id>/ pattern.
-        """
-        match = re.search(r"/comments/([a-z0-9]+)/", url)
-        return match.group(1) if match else None
+        m = re.search(r"/comments/([a-z0-9]+)/", url)
+        return m.group(1) if m else None
 
     if st.button("🚀 Scrape Comments", use_container_width=True):
         url_list = [u.strip() for u in urls.splitlines() if u.strip()]
@@ -449,53 +445,83 @@ with tabs[1]:
                     st.warning(f"⚠️ Could not extract post ID from URL: {url}")
                     continue
 
+                count = 0
+                scraped = []
                 try:
+                    # ----- Try PRAW first -----
                     submission = reddit.submission(id=submission_id)
-                    if submission is None or getattr(submission, "num_comments", 0) == 0:
-                        st.warning(f"⚠️ Skipping deleted or empty post: {url}")
-                        continue
-
-                    # Expand all comments (replace 'MoreComments' placeholders)
                     submission.comments.replace_more(limit=None)
-                    count = 0
-
-                    for comment in submission.comments.list():
-                        body = getattr(comment, "body", "").strip()
-                        if not body:
+                    for c in submission.comments.list():
+                        if not getattr(c, "body", "").strip():
                             continue
-                        all_comments.append({
+                        scraped.append({
                             "thread_url": url,
                             "subreddit": str(submission.subreddit),
                             "post_title": submission.title,
-                            "author": str(comment.author) if comment.author else "[deleted]",
-                            "score": comment.score,
-                            "created_utc": datetime.fromtimestamp(comment.created_utc, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S %Z"),
-                            "body": body
+                            "author": str(c.author) if c.author else "[deleted]",
+                            "score": c.score,
+                            "created_utc": datetime.fromtimestamp(
+                                c.created_utc, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S %Z"),
+                            "body": c.body.strip()
                         })
                         count += 1
                         if count >= max_comments_per_url:
-                            break  # ⛔ Stop when per-URL limit reached
-
-                    status.text(f"✅ {idx+1}/{len(url_list)} — {count:,} comments from {url}")
-                    time.sleep(0.3)
-
+                            break
                 except Exception as e:
-                    st.warning(f"⚠️ Failed to scrape {url}: {e}")
-                    continue
+                    st.info(f"⚠️ PRAW failed for {url} — switching to JSON ({e})")
+                    scraped = []
 
+                # ----- Fallback: Reddit JSON endpoint -----
+                if not scraped:
+                    json_url = url.rstrip("/") + ".json?limit=5000"
+                    try:
+                        headers = {"User-Agent": USER_AGENT}
+                        res = requests.get(json_url, headers=headers, timeout=20)
+                        if res.status_code == 200:
+                            data = res.json()
+                            comments = data[1]["data"]["children"]
+                            for item in comments:
+                                if item["kind"] != "t1":
+                                    continue
+                                body = item["data"].get("body", "").strip()
+                                if not body:
+                                    continue
+                                scraped.append({
+                                    "thread_url": url,
+                                    "subreddit": item["data"].get("subreddit", ""),
+                                    "post_title": data[0]["data"]["children"][0]["data"].get("title", ""),
+                                    "author": item["data"].get("author", "[deleted]"),
+                                    "score": item["data"].get("score", 0),
+                                    "created_utc": datetime.fromtimestamp(
+                                        item["data"].get("created_utc", 0),
+                                        tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S %Z"),
+                                    "body": body
+                                })
+                                count += 1
+                                if count >= max_comments_per_url:
+                                    break
+                        else:
+                            st.warning(f"⚠️ JSON fetch failed for {url} ({res.status_code})")
+                    except Exception as e:
+                        st.warning(f"⚠️ JSON error for {url}: {e}")
+
+                if scraped:
+                    all_comments.extend(scraped)
+                    status.text(f"✅ {idx+1}/{len(url_list)} — {count:,} comments from {url}")
+                else:
+                    status.text(f"⚠️ No comments found for {url}")
                 progress.progress(int(((idx + 1) / len(url_list)) * 100))
+                time.sleep(0.3)
 
-            # --- Results display and export
+            # ----- Output -----
             if not all_comments:
                 st.warning("⚠️ No comments scraped.")
             else:
                 df_comments = pd.DataFrame(all_comments)
                 st.success(f"✅ Scraped {len(df_comments):,} comments total from {len(url_list)} URLs.")
 
-                # Display preview
                 st.dataframe(df_comments.head(20), use_container_width=True)
 
-                # Allow export
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine="openpyxl") as writer:
                     df_comments.to_excel(writer, index=False, sheet_name="Reddit Comments")
