@@ -86,12 +86,12 @@ with tabs[0]:
     pairing_enabled = st.checkbox("Enable per-query subreddit targeting", value=False)
 
     if pairing_enabled:
-        st.markdown(
-            "<small>✅ Each query line will target the subreddit on the same line below.<br>"
-            "<b>Example:</b><br><b>Queries:</b><br>stress<br>anxiety<br>"
-            "<b>Subreddits:</b><br>azcardinals<br>falcons</small>",
-            unsafe_allow_html=True
-        )
+     st.markdown(
+    "<small>✅ Each query line will target the subreddit on the same line below.<br>"
+    "For example, if your first query is about <b>stress</b> and your first subreddit line is <b>azcardinals</b>, "
+    "that query will only search in <b>r/azcardinals</b>.</small>",
+    unsafe_allow_html=True
+    )
         pairing_subs_text = st.text_area(
             "Enter subreddits (one per line matching each query)",
             placeholder="azcardinals\nfalcons",
